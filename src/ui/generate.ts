@@ -1,6 +1,6 @@
 import { countSpace, createGenerator, validateOptions } from "../core/generate";
 import { FILTERS, FILTER_BY_KEY, REGRESS_MAX, checkExpr, describeRule, parseRegressKey, regressKey, type FilterDef } from "../core/filters";
-import { backtest, regressionRecentRange } from "../core/stats";
+import { backtest, recentMetricRange, regressionRecentRange } from "../core/stats";
 import { acValue, highCount, oddCount, sum } from "../core/metrics";
 import { historyBefore } from "../core/draws";
 import type { FilterRule } from "../core/types";
@@ -241,7 +241,7 @@ export function renderGenerate(root: HTMLElement) {
 
   let regressNote: ["ok" | "warn" | "error" | "info", string] | null = null;
   function regressionSection() {
-    const box = h("div", { class: "card" }, h("strong", {}, "회귀 필터"), h("p", { class: "muted" }, "N회귀: 목표 회차에서 N회 전 당첨 본번호와 겹치는 번호의 개수입니다. (1회귀는 이월수와 같음. 원본 회귀분석은 2~200회귀)"));
+    const box = h("div", { class: "card" }, h("strong", {}, "회귀 필터"), h("p", { class: "muted" }, "N회귀: 목표 회차에서 N회 전 당첨 본번호와 겹치는 번호의 개수입니다. 1~200회귀까지 동시에 걸 수 있습니다. (1회귀는 이월수와 같음)"));
     const regs = () => state.rules.filter((r) => parseRegressKey(r.key) !== null);
     const msg = h("div", { role: "status" });
     const nIn = h("input", { type: "number", min: 1, max: REGRESS_MAX, value: "2", "aria-label": "회귀 N", style: "width:5rem" });
@@ -261,7 +261,7 @@ export function renderGenerate(root: HTMLElement) {
     };
     const say = (kind: "ok" | "warn" | "error" | "info", t: string) => { regressNote = [kind, t]; clear(msg); msg.append(notice(kind, t)); };
     const history2 = () => (state.draws.state === "ok" ? state.draws.draws.filter((d) => d.round < targetRound()) : []);
-    const all = Array.from({ length: REGRESS_MAX - 1 }, (_, i) => i + 2);
+    const all = Array.from({ length: REGRESS_MAX }, (_, i) => i + 1);
     box.append(
       h("div", { class: "row" },
         h("label", {}, "N ", nIn), h("label", {}, "최소 ", mnIn), h("label", {}, "최대 ", mxIn),
@@ -284,12 +284,17 @@ export function renderGenerate(root: HTMLElement) {
           const mn = clamp((mnIn as HTMLInputElement).value, 0), mx = clamp((mxIn as HTMLInputElement).value, 6);
           if (mn > mx) return say("error", "최소가 최대보다 큽니다.");
           setSteps(all, () => ({ min: mn, max: mx }));
-        } }, "2~200회귀 일괄 적용 (위 최소·최대)"),
+        } }, "1~200회귀 일괄 적용 (위 최소·최대)"),
         h("button", { type: "button", onclick: () => {
           if (state.draws.state !== "ok") return say("info", "당첨 이력이 없어 계산할 수 없습니다.");
           const hist = history2();
-          const n = setSteps(all, (st) => regressionRecentRange(hist, targetRound(), st));
-          say("ok", `${n}개 회귀에 최근 10회 기준 범위를 적용했습니다.`);
+          let withData = 0;
+          setSteps(all, (st) => {
+            const r = regressionRecentRange(hist, targetRound(), st);
+            if (r) withData++;
+            return r ?? { min: 0, max: 6 }; // 표본이 없는 회귀는 제한 없음(0~6)으로 걸어 둔다
+          });
+          say("ok", `${all.length}개 회귀를 걸었습니다. 최근 10회 기준 범위를 계산한 것은 ${withData}개이고, 이력이 모자라 표본이 없는 ${all.length - withData}개는 0~6(제한 없음)입니다.`);
           drawFilters();
         } }, "최근 10회 기준 일괄 적용 (원본 방식)"),
         h("button", { type: "button", class: "danger", onclick: () => { state.rules = state.rules.filter((r) => parseRegressKey(r.key) === null); void persist(); drawFilters(); refresh(); } }, "회귀 필터 모두 해제")),
@@ -322,7 +327,23 @@ export function renderGenerate(root: HTMLElement) {
     groups.forEach((g, gi) => {
       const list = FILTERS.filter((f) => f.group === g);
       const active = list.filter((f) => getRule(f.key)).length;
-      filterBox.append(h("details", { open: gi === 0 || active > 0 }, h("summary", {}, h("strong", {}, `${g} (${list.length}개${active ? ` · 사용 중 ${active}` : ""})`)), h("div", { class: "cards" }, ...list.map(filterCard))));
+      const groupTools = g === "용지" || g === "9궁"
+        ? h("div", { class: "row" },
+            h("button", { type: "button", onclick: () => {
+              if (state.draws.state !== "ok") return void alert("당첨 이력 데이터가 없어 계산할 수 없습니다.");
+              const hist = state.draws.draws.filter((d) => d.round < targetRound());
+              const rows = list.filter((f) => /^(row|col|gung)\d$/.test(f.key)); // 원본처럼 가로·세로 14라인, 9궁 9개만
+              const keys = new Set(rows.map((f) => f.key));
+              state.rules = state.rules.filter((r) => !keys.has(r.key));
+              for (const f of rows) {
+                const rg = recentMetricRange({ key: f.key }, hist);
+                if (rg) state.rules.push({ key: f.key, min: rg.min, max: rg.max });
+              }
+              void persist(); drawFilters(); refresh();
+            } }, `${g} 최근 10회 범위 일괄 적용`),
+            h("button", { type: "button", class: "danger", onclick: () => { const keys = new Set(list.map((f) => f.key)); state.rules = state.rules.filter((r) => !keys.has(r.key)); void persist(); drawFilters(); refresh(); } }, `${g} 필터 해제`))
+        : "";
+      filterBox.append(h("details", { open: gi === 0 || active > 0 }, h("summary", {}, h("strong", {}, `${g} (${list.length}개${active ? ` · 사용 중 ${active}` : ""})`)), groupTools, h("div", { class: "cards" }, ...list.map(filterCard))));
     });
   }
 

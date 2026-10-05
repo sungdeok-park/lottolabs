@@ -2,7 +2,7 @@ import { ExprError, collectVars, evalExpr, parseExpr } from "./expr";
 import type { Combo, Draw, FilterRule, HistoryContext } from "./types";
 import * as m from "./metrics";
 
-export type FilterGroup = "기본 분석" | "번호 특성" | "분포" | "용지" | "과거 이력" | "내 필터";
+export type FilterGroup = "기본 분석" | "번호 특성" | "분포" | "용지" | "9궁" | "과거 이력" | "내 필터";
 
 export interface FilterDef {
   key: string;
@@ -120,6 +120,10 @@ export const FILTERS: FilterDef[] = [
   def("paperMaxDiag", "용지 대각선 최대 개수", "용지", "같은 대각선(↘·↗)에 놓인 번호 수의 최댓값", [1, 6], m.paperMaxDiagonal),
   def("paperCluster", "용지 인접 묶음 크기", "용지", "8방향으로 이웃한 번호끼리 묶은 최대 묶음 크기", [1, 6], m.paperMaxCluster),
   def("paperPattern", "용지 공간 패턴", "용지", "0 분산 · 1 혼합 · 2 클러스터 · 3 대각선 · 4 세로 직선 · 5 가로 직선 (우선순위 5→4→3→2→0→1)", [0, 5], m.paperPattern),
+
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => def(`gung${g}`, `${g}궁 개수`, "9궁", `${g}궁(${(g - 1) * 5 + 1}~${g * 5})에 놓인 번호의 개수`, [0, 5], m.gungCount(g))),
+  def("gungActive", "활성 9궁 수", "9궁", "번호가 1개 이상 있는 궁의 수", [2, 6], m.gungActive),
+  def("gungMax", "9궁 최대 개수", "9궁", "한 궁에 가장 많이 몰린 번호 수", [1, 5], m.gungMax),
 
   def("carry", "이월수", "과거 이력", "직전 회차 본번호와 겹치는 개수", [0, 6], carryover, { needsHistory: true }),
   def("bonusCarry", "보너스 이월", "과거 이력", "직전 회차 보너스 번호 포함 여부 (0/1)", [0, 1], bonusCarry, { needsHistory: true }),

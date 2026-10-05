@@ -420,3 +420,72 @@ describe("로또용지 공간 지표 (원본 lotto_paper 알고리즘과 동일)
     expect(m.paperActiveLines([1, 2, 3, 8, 9, 10])).toBe(2 + 3);
   });
 });
+
+import { recentMetricRange } from "../src/core/stats";
+
+describe("9궁(마방진) (원본 magic_square 정의)", () => {
+  // magic_square.html 의 gungDefinitions / calculateGungCounts / applyRecent10Filters 를 옮긴 참조 구현
+  const gungDefinitions: Record<string, number[]> = {
+    "1궁": [1, 2, 3, 4, 5], "2궁": [6, 7, 8, 9, 10], "3궁": [11, 12, 13, 14, 15], "4궁": [16, 17, 18, 19, 20], "5궁": [21, 22, 23, 24, 25],
+    "6궁": [26, 27, 28, 29, 30], "7궁": [31, 32, 33, 34, 35], "8궁": [36, 37, 38, 39, 40], "9궁": [41, 42, 43, 44, 45],
+  };
+  it("무작위 조합 5000개에서 궁별 개수가 원본과 같다", () => {
+    for (let i = 0; i < 5000; i++) {
+      const c = randCombo();
+      Object.entries(gungDefinitions).forEach(([name, nums], idx) => {
+        expect(f(`gung${idx + 1}`).compute(c), name).toBe(c.filter((n) => nums.includes(n)).length);
+      });
+      const active = Object.values(gungDefinitions).filter((nums) => c.some((n) => nums.includes(n))).length;
+      expect(f("gungActive").compute(c)).toBe(active);
+      expect(f("gungMax").compute(c)).toBe(Math.max(...Object.values(gungDefinitions).map((nums) => c.filter((n) => nums.includes(n)).length)));
+    }
+  });
+  it("궁 경계", () => {
+    expect([1, 5, 6, 10, 41, 45].map((n) => m.gungOf(n))).toEqual([1, 1, 2, 2, 9, 9]);
+    expect(f("gung9").compute([41, 42, 43, 44, 45, 1])).toBe(5);
+    expect(f("gungActive").compute([1, 2, 3, 4, 5, 6])).toBe(2);
+    expect(f("gungMax").compute([1, 6, 11, 16, 21, 26])).toBe(1);
+  });
+  it("최근 10회차 필터: 궁별 최솟값·최댓값이 원본과 같다", () => {
+    const hist: Draw[] = Array.from({ length: 40 }, (_, i) => mk(i + 1, randCombo(), 0)).map((d) => ({ ...d, bonus: [1, 2, 3, 4, 5, 6, 7, 8].find((b) => !d.numbers.includes(b))! }));
+    const recent10 = hist.slice(-10);
+    for (const [name, nums] of Object.entries(gungDefinitions)) {
+      const values = recent10.map((d) => d.numbers.filter((n) => nums.includes(n)).length);
+      const g = Number(name[0]);
+      const r = recentMetricRange({ key: `gung${g}` }, hist)!;
+      expect({ min: r.min, max: r.max }).toEqual({ min: Math.min(...values), max: Math.max(...values) });
+      expect(r.samples).toBe(10);
+    }
+    expect(recentMetricRange({ key: "gung1" }, [])).toBeNull();
+    expect(recentMetricRange({ key: "gung1" }, hist.slice(0, 3))!.samples).toBe(3);
+  });
+});
+
+describe("회귀 200개 동시 적용", () => {
+  const many: Draw[] = Array.from({ length: 1203 }, (_, i) => mk(i + 1, randCombo(), 0)).map((d) => ({ ...d, bonus: [1, 2, 3, 4, 5, 6, 7, 8].find((b) => !d.numbers.includes(b))! }));
+  it("1~200회귀 규칙 200개를 한꺼번에 걸어도 검증·생성이 동작한다", () => {
+    const h = historyBefore(many, 1204);
+    const rules = Array.from({ length: 200 }, (_, i) => ({ key: regressKey(i + 1), min: 0, max: 6 }));
+    expect(validateOptions({ count: 5, fixed: [], exclude: [], candidates: [], rules }, true)).toEqual([]);
+    const t0 = Date.now();
+    const r = generate({ count: 200, fixed: [], exclude: [], candidates: [], rules, history: h, maxAttempts: 100000 });
+    expect(r.combos).toHaveLength(200);
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+  it("200개 모두에 최근 10회 범위를 계산하고 그 범위를 지킨다", () => {
+    const h = historyBefore(many, 1204);
+    const rules = Array.from({ length: 200 }, (_, i) => {
+      const r = regressionRecentRange(many, 1204, i + 1)!;
+      return { key: regressKey(i + 1), min: r.min, max: r.max };
+    });
+    const r = generate({ count: 5, fixed: [], exclude: [], candidates: [], rules, history: h, maxAttempts: 2_000_000 });
+    for (const c of r.combos) {
+      for (const rule of rules) {
+        const step = parseRegressKey(rule.key)!;
+        const src = new Set(many.find((d) => d.round === 1204 - step)!.numbers);
+        const k = c.filter((n) => src.has(n)).length;
+        expect(k >= rule.min && k <= rule.max).toBe(true);
+      }
+    }
+  }, 60000);
+});

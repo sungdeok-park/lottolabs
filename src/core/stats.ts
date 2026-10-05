@@ -172,3 +172,16 @@ export function regressionRecentRange(draws: readonly Draw[], targetRound: numbe
   }
   return values.length ? { min: Math.min(...values), max: Math.max(...values), samples: values.length } : null;
 }
+
+/**
+ * 원본 "최근 10회차 필터 적용": 가장 최근 count개 회차에서 지표 값의 최솟값·최댓값.
+ * 이력이 필요한 지표는 각 회차를 그 이전 이력만으로 평가한다.
+ */
+export function recentMetricRange(rule: FilterRule, draws: readonly Draw[], count = 10): { min: number; max: number; samples: number } | null {
+  const def = resolveDef(rule);
+  if (!def || !draws.length) return null;
+  const from = Math.max(0, draws.length - count);
+  const values: number[] = [];
+  for (let i = from; i < draws.length; i++) values.push(def.compute(draws[i]!.numbers, def.needsHistory ? { draws: draws.slice(0, i), targetRound: draws[i]!.round } : undefined));
+  return { min: Math.min(...values), max: Math.max(...values), samples: values.length };
+}

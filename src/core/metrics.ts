@@ -162,3 +162,12 @@ export function paperPattern(c: Combo): number {
   if (paperMaxRow(c) <= 1 && paperMaxCol(c) <= 1) return 0;
   return 1;
 }
+
+// ---- 9궁(마방진): 1~45를 5개씩 9개 궁으로 나눈다 (원본 magic_square 분석과 같은 정의) ----
+// 1궁 1~5, 2궁 6~10, 3궁 11~15, 4궁 16~20, 5궁 21~25, 6궁 26~30, 7궁 31~35, 8궁 36~40, 9궁 41~45
+export const gungOf = (n: number) => Math.ceil(n / 5);
+export const gungCount = (g: number) => (c: Combo) => count(c, (n) => gungOf(n) === g);
+/** 활성 9궁 수: 번호가 1개 이상 있는 궁의 수 */
+export const gungActive = (c: Combo) => new Set(c.map(gungOf)).size;
+/** 한 궁에 가장 많이 몰린 번호 수 */
+export const gungMax = (c: Combo) => Math.max(...Array.from({ length: 9 }, (_, i) => gungCount(i + 1)(c)));
