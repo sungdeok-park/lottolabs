@@ -10,6 +10,8 @@ export interface Draw {
 export interface HistoryContext {
   /** 목표 회차 이전 회차만 포함 (미래 데이터 혼입 방지) */
   draws: readonly Draw[];
+  /** 조합이 노리는 회차. 없으면 마지막 이력 회차 + 1 로 본다. (회귀 필터가 사용) */
+  targetRound?: number;
 }
 
 /** 허용 값 집합(values) 또는 연속 범위(min/max). 둘 다 있으면 둘 다 만족해야 한다. */

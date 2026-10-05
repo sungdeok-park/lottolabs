@@ -27,6 +27,7 @@ interface Prep {
   /** 마지막 출현 이후 지난 회차 수 (직전 회차에 나왔으면 0, 한 번도 없으면 이력 길이) */
   absence: number[];
   pastSets: Set<number>[];
+  byRound: Map<number, Set<number>>;
 }
 
 const preps = new WeakMap<HistoryContext, Prep>();
@@ -53,7 +54,7 @@ function prep(h: HistoryContext): Prep {
   };
   const absence = new Array<number>(m.MAX_NUM + 1).fill(draws.length);
   draws.forEach((d, i) => d.numbers.forEach((x) => (absence[x] = draws.length - 1 - i)));
-  p = { last, lastSet, neighborSet, freq, absence, pastSets: draws.map((d) => new Set(d.numbers)) };
+  p = { last, lastSet, neighborSet, freq, absence, pastSets: draws.map((d) => new Set(d.numbers)), byRound: new Map(draws.map((d) => [d.round, new Set(d.numbers)])) };
   preps.set(h, p);
   return p;
 }
@@ -113,6 +114,13 @@ export const FILTERS: FilterDef[] = [
   ...[1, 2, 3, 4, 5, 6, 7].map((r) => def(`row${r}`, `가로${r} 개수`, "용지", `용지 가로 ${r}줄(${(r - 1) * 7 + 1}~${Math.min(r * 7, 45)})에 놓인 번호의 개수`, [0, r === 7 ? 3 : 6], m.rowCount(r))),
   ...[1, 2, 3, 4, 5, 6, 7].map((k) => def(`col${k}`, `세로${k} 개수`, "용지", `용지 세로 ${k}줄(${Array.from({ length: k <= 3 ? 7 : 6 }, (_, i) => k + i * 7).join(",")})에 놓인 번호의 개수`, [0, 6], m.colCount(k))),
 
+  def("paperActive", "용지 활성 라인 수", "용지", "번호가 놓인 가로·세로 라인의 합 (최대 14)", [5, 12], m.paperActiveLines),
+  def("paperMaxRow", "용지 가로 최대 개수", "용지", "한 가로 라인에 가장 많이 몰린 번호 수", [1, 6], m.paperMaxRow),
+  def("paperMaxCol", "용지 세로 최대 개수", "용지", "한 세로 라인에 가장 많이 몰린 번호 수", [1, 6], m.paperMaxCol),
+  def("paperMaxDiag", "용지 대각선 최대 개수", "용지", "같은 대각선(↘·↗)에 놓인 번호 수의 최댓값", [1, 6], m.paperMaxDiagonal),
+  def("paperCluster", "용지 인접 묶음 크기", "용지", "8방향으로 이웃한 번호끼리 묶은 최대 묶음 크기", [1, 6], m.paperMaxCluster),
+  def("paperPattern", "용지 공간 패턴", "용지", "0 분산 · 1 혼합 · 2 클러스터 · 3 대각선 · 4 세로 직선 · 5 가로 직선 (우선순위 5→4→3→2→0→1)", [0, 5], m.paperPattern),
+
   def("carry", "이월수", "과거 이력", "직전 회차 본번호와 겹치는 개수", [0, 6], carryover, { needsHistory: true }),
   def("bonusCarry", "보너스 이월", "과거 이력", "직전 회차 보너스 번호 포함 여부 (0/1)", [0, 1], bonusCarry, { needsHistory: true }),
   def("neighbor", "이웃수", "과거 이력", "직전 회차 번호의 ±1 번호 포함 개수", [0, 6], neighbor, { needsHistory: true }),
@@ -157,6 +165,28 @@ function exprDef(rule: FilterRule): FilterDef {
   return def(rule.key, rule.label ?? "내 표현식", "내 필터", src, [0, 1], (c, h) => evalExpr(root, c, (name) => FILTER_BY_KEY.get(name)?.compute(c, h)), { needsHistory });
 }
 
+// ---- 회귀 필터 ----
+export const REGRESS_MAX = 200;
+export const regressKey = (step: number) => `regress${step}`;
+export const parseRegressKey = (key: string): number | null => {
+  const m2 = /^regress(\d{1,3})$/.exec(key);
+  const n = m2 ? Number(m2[1]) : 0;
+  return n >= 1 && n <= REGRESS_MAX ? n : null;
+};
+
+/**
+ * N회귀: 조합이 노리는 회차 T에서 N회 전(T−N) 당첨 본번호와 겹치는 번호의 개수.
+ * (원본 회귀분석 페이지의 정의. 1회귀는 이월수와 같고, 원본 화면은 2~200회귀를 다룬다.)
+ */
+function regressDef(step: number): FilterDef {
+  return def(regressKey(step), `${step}회귀`, "과거 이력", `${step}회 전 당첨 본번호와 겹치는 개수`, [0, 6], (c, h) => {
+    if (!h || !h.draws.length) return 0;
+    const target = h.targetRound ?? h.draws[h.draws.length - 1]!.round + 1;
+    const src = prep(h).byRound.get(target - step);
+    return src ? c.filter((n) => src.has(n)).length : 0;
+  }, { needsHistory: true });
+}
+
 /** 규칙에 대응하는 필터 정의. 알 수 없거나 잘못된 규칙이면 undefined. */
 export function resolveDef(rule: FilterRule): FilterDef | undefined {
   if (rule.set) return setDef(rule);
@@ -164,6 +194,8 @@ export function resolveDef(rule: FilterRule): FilterDef | undefined {
     if (!checkExpr(rule.expr).ok) return undefined;
     return exprDef(rule);
   }
+  const step = parseRegressKey(rule.key);
+  if (step !== null) return regressDef(step);
   return FILTER_BY_KEY.get(rule.key);
 }
 

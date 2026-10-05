@@ -145,3 +145,30 @@ export function rankDistribution(combos: readonly Combo[], draw: Draw, rankOf: (
   }
   return out;
 }
+
+/** 회귀 N에서 회차별 값: 그 회차 본번호 ∩ N회 전 본번호의 개수 */
+export function regressionSeries(draws: readonly Draw[], step: number): { round: number; sourceRound: number; hits: number }[] {
+  const byRound = new Map(draws.map((d) => [d.round, d]));
+  const out: { round: number; sourceRound: number; hits: number }[] = [];
+  for (const d of draws) {
+    const src = byRound.get(d.round - step);
+    if (!src) continue;
+    out.push({ round: d.round, sourceRound: src.round, hits: d.numbers.filter((n) => src.numbers.includes(n)).length });
+  }
+  return out;
+}
+
+/**
+ * 원본 "최근 10회차 필터 적용": 목표 회차에서 step씩 거슬러 올라가며(T−step, T−2·step, …)
+ * 각 회차와 그 step 전 회차의 겹침 개수를 count개 모은 뒤 최솟값·최댓값을 돌려준다.
+ */
+export function regressionRecentRange(draws: readonly Draw[], targetRound: number, step: number, count = 10): { min: number; max: number; samples: number } | null {
+  const byRound = new Map(draws.map((d) => [d.round, d]));
+  const values: number[] = [];
+  for (let curr = targetRound - step; curr > 0 && values.length < count; curr -= step) {
+    const cur = byRound.get(curr);
+    const prev = byRound.get(curr - step);
+    if (cur && prev) values.push(cur.numbers.filter((n) => prev.numbers.includes(n)).length);
+  }
+  return values.length ? { min: Math.min(...values), max: Math.max(...values), samples: values.length } : null;
+}

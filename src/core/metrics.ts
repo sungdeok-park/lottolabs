@@ -116,3 +116,49 @@ export const colCount = (k: number) => (c: Combo) => count(c, (n) => ticketCol(n
 export const multipleCount = (k: number) => (c: Combo) => count(c, (n) => n % k === 0);
 /** 1~45 안에 있는 k의 배수 개수 */
 export const multiplesInRange = (k: number) => Math.floor(MAX_NUM / k);
+
+// ---- 로또용지 공간 지표 (원본 lotto_paper 분석과 같은 정의) ----
+// 용지 좌표: 행 = floor((n-1)/7), 열 = (n-1)%7 (0부터).
+const coord = (n: number) => ({ r: Math.floor((n - 1) / 7), c: (n - 1) % 7 });
+
+/** 활성 라인 수: 번호가 1개 이상 놓인 가로 라인 + 세로 라인의 수 (최대 14) */
+export const paperActiveLines = (c: Combo) => ticketRows(c) + ticketCols(c);
+export const paperMaxRow = (c: Combo) => Math.max(...[1, 2, 3, 4, 5, 6, 7].map((r) => rowCount(r)(c)));
+export const paperMaxCol = (c: Combo) => Math.max(...[1, 2, 3, 4, 5, 6, 7].map((k) => colCount(k)(c)));
+
+/** 같은 대각선(↘ r−c 같음, ↗ r+c 같음)에 놓인 번호 수의 최댓값 */
+export function paperMaxDiagonal(c: Combo): number {
+  const down = new Map<number, number>();
+  const up = new Map<number, number>();
+  for (const n of c) {
+    const { r, c: k } = coord(n);
+    down.set(r - k, (down.get(r - k) ?? 0) + 1);
+    up.set(r + k, (up.get(r + k) ?? 0) + 1);
+  }
+  return Math.max(...down.values(), ...up.values());
+}
+
+/** 8방향으로 이웃한 번호끼리 묶었을 때 가장 큰 묶음의 크기 */
+export function paperMaxCluster(c: Combo): number {
+  const pts = c.map(coord);
+  const parent = pts.map((_, i) => i);
+  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x]!)));
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      if (Math.abs(pts[i]!.r - pts[j]!.r) <= 1 && Math.abs(pts[i]!.c - pts[j]!.c) <= 1) parent[find(i)] = find(j);
+    }
+  }
+  const size = new Map<number, number>();
+  for (let i = 0; i < pts.length; i++) size.set(find(i), (size.get(find(i)) ?? 0) + 1);
+  return Math.max(...size.values());
+}
+
+/** 공간 패턴 코드: 0 분산, 1 혼합, 2 클러스터(3개 이상 인접), 3 대각선(4개 이상), 4 세로 직선(4개 이상), 5 가로 직선(4개 이상). 우선순위는 5→4→3→2→0→1. */
+export function paperPattern(c: Combo): number {
+  if (paperMaxRow(c) >= 4) return 5;
+  if (paperMaxCol(c) >= 4) return 4;
+  if (paperMaxDiagonal(c) >= 4) return 3;
+  if (paperMaxCluster(c) >= 3) return 2;
+  if (paperMaxRow(c) <= 1 && paperMaxCol(c) <= 1) return 0;
+  return 1;
+}

@@ -42,7 +42,7 @@ export function validateDrawFile(f: unknown): ValidationReport {
 
 /** 목표 회차 이전 회차만 반환한다. */
 export function historyBefore(draws: readonly Draw[], targetRound: number): HistoryContext {
-  return { draws: draws.filter((d) => d.round < targetRound) };
+  return { draws: draws.filter((d) => d.round < targetRound), targetRound };
 }
 
 export const latestRound = (draws: readonly Draw[]) => draws.reduce((a, d) => Math.max(a, d.round), 0);

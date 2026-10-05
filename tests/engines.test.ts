@@ -289,3 +289,134 @@ describe("휠 엔진 독립 검증", () => {
     }
   });
 });
+
+import { historyBefore } from "../src/core/draws";
+import { parseRegressKey, regressKey, resolveDef } from "../src/core/filters";
+import { regressionRecentRange, regressionSeries } from "../src/core/stats";
+
+const rnd = (() => { let s = 12345; return () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648); })();
+const randCombo = () => { const set = new Set<number>(); while (set.size < 6) set.add(1 + Math.floor(rnd() * 45)); return m.sortCombo([...set]); };
+
+describe("회귀 (원본 회귀분석 페이지 정의)", () => {
+  it("N회귀 = 노리는 회차에서 N회 전 당첨번호와 겹치는 수", () => {
+    const h = historyBefore(draws, 5); // 1~4회 이력, 목표 5회
+    const reg = (n: number) => resolveDef({ key: regressKey(n) })!;
+    expect(reg(2).compute([20, 21, 1, 2, 3, 4], h)).toBe(2); // 5-2=3회 [20..25]
+    expect(reg(1).compute([20, 21, 22, 1, 2, 3], h)).toBe(3); // 5-1=4회 [20,21,22,40,41,42]
+    expect(reg(4).compute([1, 2, 3, 40, 41, 42], h)).toBe(3); // 5-4=1회 [1..6]
+    expect(reg(3).compute([10, 11, 12, 1, 2, 3], h)).toBe(3); // 5-3=2회 [10..15]
+    expect(reg(5).compute([1, 2, 3, 4, 5, 6], h)).toBe(0); // 0회는 없음
+  });
+  it("1회귀는 이월수와 같다", () => {
+    const h = historyBefore(draws, 5);
+    for (let i = 0; i < 200; i++) {
+      const c = randCombo();
+      expect(resolveDef({ key: "regress1" })!.compute(c, h)).toBe(FILTER_BY_KEY.get("carry")!.compute(c, h));
+    }
+  });
+  it("목표 회차를 명시하면 그 기준으로 계산한다 (이력이 모자란 미래 회차는 0)", () => {
+    const h = historyBefore(draws, 10);
+    expect(h.targetRound).toBe(10);
+    expect(resolveDef({ key: "regress2" })!.compute([1, 2, 3, 4, 5, 6], h)).toBe(0); // 8회 없음
+    expect(resolveDef({ key: "regress9" })!.compute([1, 2, 3, 4, 5, 6], h)).toBe(6); // 1회
+  });
+  it("키 범위: 1~200만 허용", () => {
+    expect(parseRegressKey("regress1")).toBe(1);
+    expect(parseRegressKey("regress200")).toBe(200);
+    expect(parseRegressKey("regress0")).toBeNull();
+    expect(parseRegressKey("regress201")).toBeNull();
+    expect(parseRegressKey("regress")).toBeNull();
+    expect(resolveDef({ key: "regress201" })).toBeUndefined();
+  });
+  it("생성에서 회귀 필터가 지켜진다", () => {
+    const many: Draw[] = Array.from({ length: 30 }, (_, i) => mk(i + 1, randCombo(), 1 + ((i * 7) % 45)).numbers.includes(1 + ((i * 7) % 45)) ? mk(i + 1, randCombo(), 46 - 1) : mk(i + 1, randCombo(), 1 + ((i * 7) % 45)));
+    const fixed = many.map((d) => (d.numbers.includes(d.bonus) ? { ...d, bonus: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].find((b) => !d.numbers.includes(b))! } : d));
+    const h = historyBefore(fixed, 31);
+    const r = generate({ count: 30, fixed: [], exclude: [], candidates: [], rules: [{ key: "regress3", min: 1, max: 2 }, { key: "regress7", values: [0] }], history: h, maxAttempts: 200000 });
+    expect(r.combos.length).toBe(30);
+    const s3 = new Set(fixed.find((d) => d.round === 28)!.numbers);
+    const s7 = new Set(fixed.find((d) => d.round === 24)!.numbers);
+    for (const c of r.combos) {
+      const k3 = c.filter((n) => s3.has(n)).length;
+      expect(k3 >= 1 && k3 <= 2).toBe(true);
+      expect(c.filter((n) => s7.has(n)).length).toBe(0);
+    }
+  });
+  it("회귀 시계열과 '최근 10회' 범위가 원본 알고리즘과 같다", () => {
+    const hist: Draw[] = Array.from({ length: 150 }, (_, i) => mk(i + 1, randCombo(), 0)).map((d) => ({ ...d, bonus: [1, 2, 3, 4, 5, 6, 7, 8].find((b) => !d.numbers.includes(b))! }));
+    const target = 151;
+    // 원본(regression.html calculateFilterDefaults)을 그대로 옮긴 참조 구현
+    const original = (step: number) => {
+      let minHits = 6, maxHits = 0, curr = target - step, count = 0;
+      while (curr > 0 && count < 10) {
+        const currData = hist.find((d) => d.round === curr);
+        const prevData = hist.find((d) => d.round === curr - step);
+        if (currData && prevData) {
+          let hits = 0;
+          prevData.numbers.forEach((n) => { if (currData.numbers.includes(n)) hits++; });
+          if (hits < minHits) minHits = hits;
+          if (hits > maxHits) maxHits = hits;
+          count++;
+        }
+        curr -= step;
+      }
+      return count > 0 ? { min: minHits, max: maxHits } : null;
+    };
+    for (const step of [2, 3, 5, 7, 11, 30, 75, 100, 149, 200]) {
+      const mine = regressionRecentRange(hist, target, step);
+      const ref = original(step);
+      expect(mine ? { min: mine.min, max: mine.max } : null, `step ${step}`).toEqual(ref);
+    }
+    const series = regressionSeries(hist, 2);
+    expect(series).toHaveLength(148);
+    expect(series[0]).toMatchObject({ round: 3, sourceRound: 1 });
+  });
+});
+
+describe("로또용지 공간 지표 (원본 lotto_paper 알고리즘과 동일)", () => {
+  // lotto_paper.html 의 lpCoord / lpAdjacent / lpMaxClusterSize / lpClassifyPattern 을 그대로 옮긴 참조 구현
+  const lpCoord = (n: number) => ({ r: Math.floor((n - 1) / 7), c: (n - 1) % 7 });
+  const lpAdjacent = (a: number, b: number) => { const ca = lpCoord(a), cb = lpCoord(b); const dr = Math.abs(ca.r - cb.r), dc = Math.abs(ca.c - cb.c); return dr <= 1 && dc <= 1 && !(dr === 0 && dc === 0); };
+  const lpMaxClusterSize = (nums: number[]) => {
+    const parent: Record<number, number> = {}; nums.forEach((n) => (parent[n] = n));
+    const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x]!)));
+    const union = (x: number, y: number) => { const rx = find(x), ry = find(y); if (rx !== ry) parent[rx] = ry; };
+    for (let i = 0; i < nums.length; i++) for (let j = i + 1; j < nums.length; j++) if (lpAdjacent(nums[i]!, nums[j]!)) union(nums[i]!, nums[j]!);
+    const g: Record<number, number> = {}; nums.forEach((n) => { const root = find(n); g[root] = (g[root] || 0) + 1; });
+    return Math.max(...Object.values(g));
+  };
+  const lpClassify = (nums: number[]) => {
+    const coords = nums.map(lpCoord);
+    const rowCount = [0, 0, 0, 0, 0, 0, 0], colCount = [0, 0, 0, 0, 0, 0, 0];
+    coords.forEach((c) => { rowCount[c.r]!++; colCount[c.c]!++; });
+    const maxRow = Math.max(...rowCount), maxCol = Math.max(...colCount);
+    const dd: Record<number, number> = {}, du: Record<number, number> = {};
+    coords.forEach((c) => { dd[c.r - c.c] = (dd[c.r - c.c] || 0) + 1; du[c.r + c.c] = (du[c.r + c.c] || 0) + 1; });
+    const maxDiag = Math.max(...Object.values(dd), ...Object.values(du));
+    const maxCluster = lpMaxClusterSize(nums);
+    if (maxRow >= 4) return "line_h"; if (maxCol >= 4) return "line_v"; if (maxDiag >= 4) return "diag"; if (maxCluster >= 3) return "cluster";
+    if (maxRow <= 1 && maxCol <= 1) return "dispersed";
+    return "mixed";
+  };
+  const NAME = ["dispersed", "mixed", "cluster", "diag", "line_v", "line_h"];
+  it("무작위 조합 20000개에서 원본 분류와 모두 일치", () => {
+    for (let i = 0; i < 20000; i++) {
+      const c = randCombo();
+      expect(NAME[m.paperPattern(c)]).toBe(lpClassify(c));
+      expect(m.paperMaxCluster(c)).toBe(lpMaxClusterSize(c));
+    }
+  });
+  it("대표 사례", () => {
+    expect(m.paperPattern([1, 2, 3, 4, 5, 40])).toBe(5);
+    expect(m.paperPattern([1, 8, 15, 22, 3, 40])).toBe(4);
+    expect(m.paperPattern([1, 9, 17, 25, 33, 5])).toBe(3);
+    expect(m.paperPattern([1, 2, 8, 30, 38, 44])).toBe(2);
+    expect(m.paperPattern([1, 11, 20, 23, 33, 42])).toBe(0);
+    expect(m.paperPattern([1, 3, 15, 17, 30, 32])).toBe(1);
+  });
+  it("활성 라인 수 = 번호가 놓인 가로+세로 라인 수", () => {
+    expect(m.paperActiveLines([1, 2, 3, 4, 5, 6])).toBe(1 + 6);
+    expect(m.paperActiveLines([1, 8, 15, 22, 29, 36])).toBe(6 + 1);
+    expect(m.paperActiveLines([1, 2, 3, 8, 9, 10])).toBe(2 + 3);
+  });
+});
