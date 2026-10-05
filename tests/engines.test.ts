@@ -39,6 +39,16 @@ describe("확장 지표", () => {
     expect(m.ticketCols([1, 8, 15, 22, 29, 36])).toBe(1);
     expect(m.ticketRows([43, 44, 45, 1, 2, 3])).toBe(2);
   });
+  it("3~9의 배수 필터", () => {
+    const c = [6, 12, 18, 24, 30, 36]; // 모두 6의 배수
+    expect([3, 4, 5, 6, 7, 8, 9].map((k) => f(`mul${k}`).compute(c))).toEqual([6, 3, 1, 6, 0, 1, 2]);
+    expect(f("mul8").compute([8, 16, 24, 32, 40, 1])).toBe(5);
+    expect(f("mul9").compute([9, 18, 27, 36, 45, 1])).toBe(5);
+    expect(f("mul7").compute([7, 14, 21, 28, 35, 42])).toBe(6);
+    expect(f("mul3").domain).toEqual([0, 6]);
+    expect(f("mul8").domain).toEqual([0, 5]);
+    expect(f("mul9").domain).toEqual([0, 5]);
+  });
   it("필터 키는 중복되지 않는다", () => {
     expect(new Set(FILTERS.map((x) => x.key)).size).toBe(FILTERS.length);
   });

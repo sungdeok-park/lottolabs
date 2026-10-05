@@ -101,10 +101,7 @@ export const FILTERS: FilterDef[] = [
   def("square", "제곱수 개수", "번호 특성", "1,4,9,16,25,36", [0, 6], m.squareCount),
   def("triangular", "삼각수 개수", "번호 특성", "1,3,6,10,15,21,28,36,45", [0, 6], m.triangularCount),
   def("twin", "쌍둥이수 개수", "번호 특성", "11,22,33,44의 개수", [0, 4], m.twinCount),
-  def("mul3", "3의 배수 개수", "번호 특성", "3의 배수의 개수", [0, 6], m.multipleOf3Count),
-  def("mul4", "4의 배수 개수", "번호 특성", "4의 배수의 개수", [0, 6], m.multipleOf4Count),
-  def("mul5", "5의 배수 개수", "번호 특성", "5의 배수의 개수", [0, 6], m.multipleOf5Count),
-  def("mul7", "7의 배수 개수", "번호 특성", "7의 배수의 개수", [0, 6], m.multipleOf7Count),
+  ...[3, 4, 5, 6, 7, 8, 9].map((k) => def(`mul${k}`, `${k}의 배수 개수`, "번호 특성", `${k}의 배수(${k}, ${2 * k}, … ${m.multiplesInRange(k) * k})의 개수`, [0, Math.min(6, m.multiplesInRange(k))], m.multipleCount(k))),
 
   def("endDigits", "끝수 종류", "분포", "서로 다른 일의 자리 숫자의 개수", [2, 6], m.distinctEndDigits),
   def("sameEndPairs", "같은 끝수 쌍", "분포", "일의 자리가 같은 쌍의 개수 (같은 끝수 3개면 3쌍)", [0, 10], m.sameEndPairs),

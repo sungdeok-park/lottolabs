@@ -53,8 +53,6 @@ export const primeCount = (c: Combo) => count(c, isPrime);
 export const compositeCount = (c: Combo) => count(c, isComposite);
 export const squareCount = (c: Combo) => count(c, isSquare);
 export const triangularCount = (c: Combo) => count(c, isTriangular);
-export const multipleOf3Count = (c: Combo) => count(c, (n) => n % 3 === 0);
-export const multipleOf5Count = (c: Combo) => count(c, (n) => n % 5 === 0);
 
 /** 서로 다른 끝수(일의 자리)의 개수 */
 export const distinctEndDigits = (c: Combo) => new Set(c.map((n) => n % 10)).size;
@@ -102,9 +100,12 @@ export function sameEndPairs(c: Combo): number {
 export const endDigitCount = (d: number) => (c: Combo) => count(c, (n) => n % 10 === d);
 /** 번호대별 개수: 1=1~10, 2=11~20, 3=21~30, 4=31~40, 5=41~45 */
 export const bandCount = (b: number) => (c: Combo) => count(c, (n) => Math.ceil(n / 10) === b);
-export const multipleOf4Count = (c: Combo) => count(c, (n) => n % 4 === 0);
-export const multipleOf7Count = (c: Combo) => count(c, (n) => n % 7 === 0);
 
 /** 용지(7칸×7줄: 1~7, 8~14, … 43~45)에서 번호가 걸친 행 수 / 열 수 */
 export const ticketRows = (c: Combo) => new Set(c.map((n) => Math.ceil(n / 7))).size;
 export const ticketCols = (c: Combo) => new Set(c.map((n) => ((n - 1) % 7) + 1)).size;
+
+/** k의 배수 개수 (k = 3~9) */
+export const multipleCount = (k: number) => (c: Combo) => count(c, (n) => n % k === 0);
+/** 1~45 안에 있는 k의 배수 개수 */
+export const multiplesInRange = (k: number) => Math.floor(MAX_NUM / k);
