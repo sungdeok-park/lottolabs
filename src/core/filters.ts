@@ -64,7 +64,6 @@ const carryover = withHist((c, p) => c.filter((n) => p.lastSet.has(n)).length);
 const neighbor = withHist((c, p) => c.filter((n) => p.neighborSet.has(n)).length);
 const bonusCarry = withHist((c, p) => (p.last && c.includes(p.last.bonus) ? 1 : 0));
 const appearedIn = (n: number) => withHist((c, p) => c.filter((x) => p.freq(n)[x]! > 0).length);
-const hotIn = (n: number) => withHist((c, p) => c.filter((x) => p.freq(n)[x]! >= 2).length);
 const coldIn = (n: number) => withHist((c, p) => c.filter((x) => p.freq(n)[x]! === 0).length);
 const maxAbsence = withHist((c, p) => Math.max(...c.map((x) => p.absence[x]!)));
 const sumAbsence = withHist((c, p) => c.reduce((a, x) => a + p.absence[x]!, 0));
@@ -118,9 +117,8 @@ export const FILTERS: FilterDef[] = [
   def("carry", "이월수", "과거 이력", "직전 회차 본번호와 겹치는 개수", [0, 6], carryover, { needsHistory: true }),
   def("bonusCarry", "보너스 이월", "과거 이력", "직전 회차 보너스 번호 포함 여부 (0/1)", [0, 1], bonusCarry, { needsHistory: true }),
   def("neighbor", "이웃수", "과거 이력", "직전 회차 번호의 ±1 번호 포함 개수", [0, 6], neighbor, { needsHistory: true }),
-  ...[5, 10, 15, 20].map((n) => def(`recent${n}`, `최근 ${n}회 출현수`, "과거 이력", `최근 ${n}회 본번호에 한 번이라도 나온 번호의 개수`, [0, 6], appearedIn(n), { needsHistory: true })),
-  ...[5, 10, 15, 20].map((n) => def(`hot${n}`, `핫 ${n}회`, "과거 이력", `최근 ${n}회 중 2번 이상 나온 번호의 개수`, [0, 6], hotIn(n), { needsHistory: true })),
-  ...[5, 10, 15, 20].map((n) => def(`cold${n}`, `콜드 ${n}회`, "과거 이력", `최근 ${n}회 동안 한 번도 안 나온 번호의 개수`, [0, 6], coldIn(n), { needsHistory: true })),
+  ...[5, 10, 15, 20].map((n) => def(`recent${n}`, `핫 ${n}회 (최근 출현수)`, "과거 이력", `뜨거운수: 최근 ${n}회 본번호에 한 번이라도 나온 번호의 개수`, [0, 6], appearedIn(n), { needsHistory: true })),
+  ...[5, 10, 15, 20].map((n) => def(`cold${n}`, `콜드 ${n}회 (최근 미출현수)`, "과거 이력", `차가운수: 최근 ${n}회 동안 한 번도 안 나온 번호의 개수`, [0, 6], coldIn(n), { needsHistory: true })),
   def("maxAbsence", "최장 미출현 회차", "과거 이력", "조합 번호 중 마지막 출현 후 가장 오래 지난 회차 수", [0, 3000], maxAbsence, { needsHistory: true }),
   def("sumAbsence", "미출현 회차 합", "과거 이력", "조합 번호들의 미출현 회차 수의 합", [0, 18000], sumAbsence, { needsHistory: true }),
   def("pastMatch", "역대 최대 일치", "과거 이력", "역대 본번호 조합과 가장 많이 겹친 개수 (6이면 과거 1등 조합과 동일)", [0, 6], pastMaxMatch, { needsHistory: true, heavy: true }),

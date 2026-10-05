@@ -61,8 +61,8 @@ describe("이력 필터", () => {
   it("보너스 이월·핫·콜드·미출현·역대 일치", () => {
     expect(f("bonusCarry").compute([26, 1, 2, 3, 4, 5], hist(4))).toBe(1);
     expect(f("bonusCarry").compute([1, 2, 3, 4, 5, 6], hist(4))).toBe(0);
-    expect(f("hot5").compute([20, 21, 22, 1, 2, 3], hist(5))).toBe(3);
-    expect(f("hot5").compute([20, 21, 22, 1, 2, 3], hist(4))).toBe(0);
+    expect(f("recent5").compute([20, 21, 22, 1, 2, 3], hist(5))).toBe(6);
+    expect(f("recent5").compute([30, 31, 32, 43, 44, 45], hist(5))).toBe(0);
     expect(f("cold5").compute([30, 31, 32, 43, 44, 45], hist(5))).toBe(6);
     expect(f("cold5").compute([1, 10, 20, 40, 41, 42], hist(5))).toBe(0);
     expect(f("maxAbsence").compute([1, 10, 20, 30, 31, 32], hist(4))).toBe(3);
