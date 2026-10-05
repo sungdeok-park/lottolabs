@@ -158,7 +158,7 @@ export interface CountResult {
 /** 정확한 전체 열거. 풀이 크면 시간이 걸리므로 yieldEvery마다 await 한다. */
 export async function countSpace(
   o: { fixed: number[]; exclude: number[]; candidates: number[]; rules: FilterRule[]; history?: HistoryContext },
-  control: { shouldStop?: () => boolean; yieldEvery?: number } = {},
+  control: { shouldStop?: () => boolean; yieldEvery?: number; onProgress?: (visited: number) => void } = {},
 ): Promise<CountResult> {
   const pool = poolOf(o.fixed, o.exclude, o.candidates);
   const need = PICK - o.fixed.length;
@@ -193,6 +193,7 @@ export async function countSpace(
     for (;;) {
       visit();
       if (++tick % yieldEvery === 0) {
+        control.onProgress?.(tick);
         if (control.shouldStop?.()) {
           res.cancelled = true;
           break;

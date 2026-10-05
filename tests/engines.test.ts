@@ -547,3 +547,47 @@ describe("필터 진단", () => {
     expect(odd.blockedAlone).toBeGreaterThan(0); // odd를 끄면 sum<=100 인 조합이 되살아남
   });
 });
+
+import { runJob, spaceSize, type JobMessage } from "../src/core/jobs";
+
+describe("계산 작업(워커용)", () => {
+  const picks = { fixed: [], exclude: [], candidates: Array.from({ length: 14 }, (_, i) => i + 1) };
+  const rules = [{ key: "odd", values: [3] }, { key: "sum", max: 50 }];
+  const run = async (kind: "count" | "diagnose", extra: Partial<Parameters<typeof runJob>[0]> = {}, stop?: () => boolean) => {
+    const msgs: JobMessage[] = [];
+    await runJob({ kind, picks, rules, draws: [], targetRound: 0, ...extra }, (m) => msgs.push(m), stop);
+    return msgs;
+  };
+  it("조합 공간 크기", () => {
+    expect(spaceSize({ fixed: [], exclude: [], candidates: [] })).toBe(8145060);
+    expect(spaceSize({ fixed: [7], exclude: [1], candidates: [] })).toBe(binom(43, 5));
+    expect(spaceSize({ fixed: [1, 2, 3, 4, 5, 6, 7], exclude: [], candidates: [] })).toBe(0);
+  });
+  it("count 결과가 직접 호출과 같고 진행률을 보낸다", async () => {
+    const direct = await countSpace({ ...picks, rules }, { yieldEvery: 500 });
+    const msgs = await run("count");
+    const done = msgs.find((m) => m.type === "done");
+    expect(done && done.type === "done" && done.kind === "count" && done.result.passed).toBe(direct.passed);
+    expect(msgs.some((m) => m.type === "progress")).toBe(false); // 3003개는 기본 yield 간격(20만) 미만
+  });
+  it("진단 결과와 취소", async () => {
+    const msgs = await run("diagnose");
+    const done = msgs.find((m) => m.type === "done");
+    expect(done && done.type === "done" && done.kind === "diagnose" && done.result.total).toBe(3003);
+    const msgs2 = await run("count", { picks: { fixed: [], exclude: [], candidates: [] }, rules: [{ key: "sum", min: 100 }] }, () => true);
+    const d2 = msgs2.find((m) => m.type === "done");
+    expect(d2 && d2.type === "done" && d2.kind === "count" && d2.result.cancelled).toBe(true);
+  });
+  it("이력이 있으면 목표 회차 이전만 쓴다", async () => {
+    const hist = [mk(1, [1, 2, 3, 4, 5, 6], 7), mk(2, [10, 11, 12, 13, 14, 15], 16)];
+    const msgs = await run("count", { rules: [{ key: "carry", values: [0] }], draws: hist, targetRound: 3, picks: { fixed: [], exclude: [], candidates: Array.from({ length: 20 }, (_, i) => i + 1) } });
+    const d = msgs.find((m) => m.type === "done");
+    // 후보 1~20 중 직전(2회) 번호 10~15를 하나도 안 쓰는 조합: C(14,6)
+    expect(d && d.type === "done" && d.kind === "count" && d.result.passed).toBe(binom(14, 6));
+  });
+  it("잘못된 요청은 error 메시지", async () => {
+    const msgs: JobMessage[] = [];
+    await runJob({ kind: "count", picks, rules, draws: [{} as never], targetRound: 3 }, (m) => msgs.push(m));
+    expect(msgs.some((m) => m.type === "error" || m.type === "done")).toBe(true);
+  });
+});

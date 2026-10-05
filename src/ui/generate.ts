@@ -1,6 +1,7 @@
-import { countSpace, createGenerator, validateOptions } from "../core/generate";
+import { createGenerator, validateOptions } from "../core/generate";
 import { FILTERS, FILTER_BY_KEY, REGRESS_MAX, checkExpr, describeRule, effectiveRules, parseRegressKey, regressKey, type FilterDef } from "../core/filters";
-import { diagnose } from "../core/diagnose";
+import { spaceSize, type JobRequest } from "../core/jobs";
+import { startJob, type JobHandle } from "./jobClient";
 import { backtest, recentMetricRange, regressionRecentRange } from "../core/stats";
 import { acValue, highCount, oddCount, sum } from "../core/metrics";
 import { historyBefore } from "../core/draws";
@@ -26,6 +27,10 @@ function targetRound() {
 }
 
 const activeRules = () => effectiveRules(state.rules, targetRound());
+
+function jobReq<K extends JobRequest["kind"]>(kind: K): JobRequest & { kind: K } {
+  return { kind, picks: structuredClone(state.picks), rules: structuredClone(activeRules()), draws: state.draws.state === "ok" ? state.draws.draws.filter((d) => d.round < targetRound()) : [], targetRound: targetRound() };
+}
 
 function history() {
   return state.draws.state === "ok" ? historyBefore(state.draws.draws, targetRound()) : undefined;
@@ -55,7 +60,41 @@ export function renderGenerate(root: HTMLElement) {
     },
   });
 
+  // ---- 상단 실시간 조합 수 ----
+  const counterBox = h("div", { class: "counter", role: "status", "aria-live": "polite" });
+  let liveJob: JobHandle<unknown> | null = null;
+  let liveTimer: ReturnType<typeof setTimeout> | undefined;
+  const LIVE_AUTO_MAX_RULES = 20;
+  const fmt = (n: number) => n.toLocaleString();
+  const updateCounter = () => {
+    clearTimeout(liveTimer);
+    liveJob?.cancel();
+    liveJob = null;
+    clear(counterBox);
+    const errs = validateOptions({ ...state.picks, rules: activeRules(), count: 1 }, !!history());
+    const rules = activeRules();
+    const total = spaceSize(state.picks);
+    const head = (...kids: (Node | string)[]) => counterBox.append(h("span", { class: "label-caps" }, "조합 수 "), ...kids, h("span", { class: "muted" }, ` · 켜진 필터 ${rules.length}개`));
+    if (errs.length) return void head(h("strong", {}, "조건 확인 필요"));
+    if (!rules.length) return void head(h("strong", { class: "big" }, fmt(total)));
+    const calc = () => {
+      clear(counterBox);
+      head(h("strong", { class: "big" }, "계산 중… 0%"));
+      const j = startJob(jobReq("count"), (v, t) => { const el = counterBox.querySelector(".big"); if (el) el.textContent = `계산 중… ${t ? Math.min(99, Math.floor((v / t) * 100)) : 0}%`; });
+      liveJob = j;
+      void j.promise.then((r) => {
+        if (liveJob !== j || !r) return;
+        clear(counterBox);
+        head(h("strong", { class: "big" }, fmt(r.passed)), h("span", { class: "muted" }, ` / ${fmt(r.total)} (${r.total ? ((r.passed / r.total) * 100).toFixed(2) : "0"}%)`));
+      });
+    };
+    if (rules.length > LIVE_AUTO_MAX_RULES) {
+      head(h("strong", { class: "big" }, `≤ ${fmt(total)}`), h("button", { type: "button", onclick: calc }, "정확히 계산"));
+    } else liveTimer = setTimeout(calc, 600);
+  };
+
   const refresh = () => {
+    updateCounter();
     clear(problems);
     const errs = validateOptions({ ...state.picks, rules: activeRules(), count: 1 }, !!history());
     for (const e of errs) problems.append(notice("error", e.message));
@@ -200,9 +239,9 @@ export function renderGenerate(root: HTMLElement) {
         ? h(
             "div",
             { class: "inputs" },
-            h("label", {}, "허용 값 ", h("input", { type: "text", inputMode: "numeric", placeholder: "예) 2,3,4", value: (rule?.values ?? []).join(","), onchange: (e: Event) => update({ ...rule, values: parseValues((e.target as HTMLInputElement).value) }) })),
-            h("label", {}, "최소 ", h("input", { type: "number", min: def.domain[0], max: def.domain[1], value: rule?.min !== undefined ? String(rule.min) : "", onchange: (e: Event) => update({ ...rule, min: num((e.target as HTMLInputElement).value) }) })),
-            h("label", {}, "최대 ", h("input", { type: "number", min: def.domain[0], max: def.domain[1], value: rule?.max !== undefined ? String(rule.max) : "", onchange: (e: Event) => update({ ...rule, max: num((e.target as HTMLInputElement).value) }) })),
+            h("label", {}, "허용 값 ", h("input", { type: "text", inputMode: "numeric", placeholder: "예) 2,3,4", value: (rule?.values ?? []).join(","), onchange: (e: Event) => update({ ...getRule(def.key), values: parseValues((e.target as HTMLInputElement).value) }) })),
+            h("label", {}, "최소 ", h("input", { type: "number", min: def.domain[0], max: def.domain[1], value: rule?.min !== undefined ? String(rule.min) : "", onchange: (e: Event) => update({ ...getRule(def.key), min: num((e.target as HTMLInputElement).value) }) })),
+            h("label", {}, "최대 ", h("input", { type: "number", min: def.domain[0], max: def.domain[1], value: rule?.max !== undefined ? String(rule.max) : "", onchange: (e: Event) => update({ ...getRule(def.key), max: num((e.target as HTMLInputElement).value) }) })),
             h("small", { class: "muted" }, `가능 범위 ${def.domain[0]}~${def.domain[1]}`),
           )
         : null,
@@ -375,7 +414,8 @@ export function renderGenerate(root: HTMLElement) {
   // ---- 실행 ----
   const countInput = h("input", { type: "number", id: "count", min: 1, max: MAX_COUNT, value: "10" });
   const runBtn = h("button", { type: "button", class: "primary", onclick: () => void run() }, "조합 생성");
-  const cancelBtn = h("button", { type: "button", hidden: true, onclick: () => (cancel = true) }, "취소");
+  let job: JobHandle<unknown> | null = null;
+  const cancelBtn = h("button", { type: "button", hidden: true, onclick: () => { cancel = true; job?.cancel(); } }, "취소");
   const analyzeBtn = h("button", { type: "button", onclick: () => void analyze() }, "단계별 분석 (정확한 조합 수)");
   const diagnoseBtn = h("button", { type: "button", onclick: () => void runDiagnose() }, "필터 진단");
   const progress = h("div", { role: "status", "aria-live": "polite" });
@@ -453,10 +493,13 @@ export function renderGenerate(root: HTMLElement) {
     cancel = false;
     setRunning(true);
     progress.textContent = "전체 조합을 세는 중… (조건에 따라 수 초 걸릴 수 있습니다)";
-    const r = await countSpace({ ...state.picks, rules: activeRules(), history: history() }, { shouldStop: () => cancel });
+    const j = startJob(jobReq("count"), (v, t) => (progress.textContent = `전체 조합을 세는 중… ${t ? Math.min(99, Math.floor((v / t) * 100)) : 0}%`));
+    job = j;
+    const r = await j.promise;
+    job = null;
     setRunning(false);
     progress.textContent = "";
-    if (r.cancelled) {
+    if (!r || r.cancelled) {
       out.append(notice("warn", "취소했습니다. 부분 결과는 표시하지 않습니다."));
       return;
     }
@@ -479,10 +522,13 @@ export function renderGenerate(root: HTMLElement) {
     cancel = false;
     setRunning(true);
     progress.textContent = "필터를 진단하는 중… (전체 조합을 훑습니다. 조건에 따라 시간이 걸릴 수 있습니다)";
-    const d = await diagnose({ ...state.picks, rules: activeRules(), history: history() }, { shouldStop: () => cancel });
+    const j = startJob(jobReq("diagnose"), (v, t) => (progress.textContent = `필터를 진단하는 중… ${t ? Math.min(99, Math.floor((v / t) * 100)) : 0}%`));
+    job = j;
+    const d = await j.promise;
+    job = null;
     setRunning(false);
     progress.textContent = "";
-    if (d.cancelled) return void out.append(notice("warn", "취소했습니다. 부분 결과는 표시하지 않습니다."));
+    if (!d || d.cancelled) return void out.append(notice("warn", "취소했습니다. 부분 결과는 표시하지 않습니다."));
     out.append(h("h3", {}, "필터 진단"), h("p", {}, `후보 공간 ${d.total.toLocaleString()}개 중 모든 필터 통과 ${d.passed.toLocaleString()}개. 필터 1개만 어겨 탈락 ${d.failedHistogram[1].toLocaleString()}개, 2개 이상 어겨 탈락 ${d.failedHistogram[2].toLocaleString()}개.`));
     const top = d.rules.filter((r) => r.blockedAlone > 0);
     if (d.passed === 0) {
@@ -526,6 +572,7 @@ export function renderGenerate(root: HTMLElement) {
   );
 
   root.append(
+    counterBox,
     h("h2", {}, "조합 만들기"),
     notice("info", DISCLAIMER),
     state.draws.state !== "ok" ? notice("warn", "당첨 이력 데이터가 없습니다. 과거 이력 필터와 결과 대조는 사용할 수 없습니다.") : "",
