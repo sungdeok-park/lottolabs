@@ -1,4 +1,4 @@
-import { FILTER_BY_KEY, evaluateRules, ruleAccepts } from "./filters";
+import { checkExpr, compileRules, evaluateCompiled, resolveDef, ruleAccepts } from "./filters";
 import { MAX_NUM, PICK, comboKey, sortCombo } from "./metrics";
 import type { Combo, FilterRule, GenerateOptions, GenerateResult, HistoryContext } from "./types";
 
@@ -29,7 +29,18 @@ export function validateOptions(o: Pick<GenerateOptions, "fixed" | "exclude" | "
     p.push({ code: "pool-small", message: `고를 수 있는 번호가 ${pool.length}개뿐이라 ${need}개를 채울 수 없습니다.` });
   }
   for (const r of o.rules) {
-    const def = FILTER_BY_KEY.get(r.key);
+    if (r.expr !== undefined) {
+      const chk = checkExpr(r.expr);
+      if (!chk.ok) {
+        p.push({ code: "expr-syntax", message: `${r.label ?? "표현식"}: ${chk.error}` });
+        continue;
+      }
+    }
+    if (r.set && (r.set.some((n) => !inRange(n)) || new Set(r.set).size !== r.set.length || r.set.length === 0)) {
+      p.push({ code: "set-invalid", message: `${r.label ?? "번호 집합"}: 1~45 사이 중복 없는 번호가 필요합니다.` });
+      continue;
+    }
+    const def = resolveDef(r);
     if (!def) {
       p.push({ code: "unknown-rule", message: `알 수 없는 필터: ${r.key}` });
       continue;
@@ -74,6 +85,7 @@ export function createGenerator(opts: GenerateOptions) {
   const rng = opts.rng ?? Math.random;
   const pool = poolOf(opts.fixed, opts.exclude, opts.candidates);
   const need = PICK - opts.fixed.length;
+  const compiled = compileRules(opts.rules);
   const seen = new Set<string>();
   const combos: Combo[] = [];
   const rejected: Record<string, number> = {};
@@ -117,7 +129,7 @@ export function createGenerator(opts: GenerateOptions) {
         const c = draw();
         const key = comboKey(c);
         if (seen.has(key)) continue;
-        const failed = evaluateRules(c, opts.rules, opts.history);
+        const failed = evaluateCompiled(c, compiled, opts.history);
         if (failed) {
           rejected[failed.key] = (rejected[failed.key] ?? 0) + 1;
           continue;
@@ -149,7 +161,8 @@ export async function countSpace(
 ): Promise<CountResult> {
   const pool = poolOf(o.fixed, o.exclude, o.candidates);
   const need = PICK - o.fixed.length;
-  const rules = o.rules.filter((r) => FILTER_BY_KEY.has(r.key));
+  const compiled = compileRules(o.rules);
+  const rules = compiled.map((x) => x.rule);
   const cum = rules.map(() => 0);
   const indep: Record<string, number> = Object.fromEntries(rules.map((r) => [r.key, 0]));
   const res: CountResult = { total: 0, passed: 0, cumulative: [], independent: indep, cancelled: false };
@@ -166,8 +179,8 @@ export async function countSpace(
     res.total++;
     let alive = true;
     for (let r = 0; r < rules.length; r++) {
-      const rule = rules[r]!;
-      const ok = ruleAccepts(rule, FILTER_BY_KEY.get(rule.key)!.compute(c, o.history));
+      const { rule, def } = compiled[r]!;
+      const ok = ruleAccepts(rule, def.compute(c, o.history));
       if (ok) indep[rule.key]!++;
       else alive = false;
       if (alive) cum[r]!++;

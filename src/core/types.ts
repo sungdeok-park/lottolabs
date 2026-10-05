@@ -18,6 +18,11 @@ export interface FilterRule {
   values?: number[];
   min?: number;
   max?: number;
+  /** 내 번호 집합 필터: 이 집합에 속한 번호가 조합에 몇 개 있는지를 값으로 사용한다. */
+  set?: number[];
+  /** 표현식 필터: 참/거짓. values가 없으면 참(1)만 허용한다. */
+  expr?: string;
+  label?: string;
 }
 
 export interface GenerateOptions {

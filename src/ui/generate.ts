@@ -1,5 +1,6 @@
 import { countSpace, createGenerator, validateOptions } from "../core/generate";
-import { FILTERS, FILTER_BY_KEY, describeRule, type FilterDef } from "../core/filters";
+import { FILTERS, FILTER_BY_KEY, checkExpr, describeRule, type FilterDef } from "../core/filters";
+import { backtest } from "../core/stats";
 import { acValue, highCount, oddCount, sum } from "../core/metrics";
 import { historyBefore } from "../core/draws";
 import type { FilterRule } from "../core/types";
@@ -8,6 +9,7 @@ import { balls, DISCLAIMER, fmtDate, notice, uid } from "./common";
 import { clear, h } from "./dom";
 
 const getRule = (key: string) => state.rules.find((r) => r.key === key);
+const labelOf = (key: string) => state.rules.find((r) => r.key === key)?.label ?? FILTER_BY_KEY.get(key)?.label ?? key;
 const MAX_COUNT = 500; // 성능 시험 전 임시 상한
 
 function parseValues(s: string): number[] {
@@ -204,12 +206,61 @@ export function renderGenerate(root: HTMLElement) {
     );
   }
 
+  function customSection() {
+    const box = h("div", { class: "card" }, h("strong", {}, "내 필터 (번호 집합 · 표현식)"));
+    const mine = state.rules.filter((r) => r.set || r.expr !== undefined);
+    for (const r of mine) {
+      box.append(h("div", { class: "row between" }, h("span", {}, describeRule(r) + (r.set ? ` ← {${r.set.join(",")}}` : "")), h("button", { type: "button", class: "danger", onclick: () => { state.rules = state.rules.filter((x) => x !== r); void persist(); drawFilters(); refresh(); } }, "삭제")));
+    }
+    const msg = h("div", { role: "status" });
+    const setName = h("input", { type: "text", placeholder: "이름 (예: 내 후보 A)", "aria-label": "번호 집합 이름" });
+    const setNums = h("input", { type: "text", placeholder: "번호 (예: 3,8,14,22,31)", "aria-label": "번호 집합 번호" });
+    const setMin = h("input", { type: "number", min: 0, max: 6, placeholder: "최소", "aria-label": "포함 최소 개수", style: "width:5rem" });
+    const setMax = h("input", { type: "number", min: 0, max: 6, placeholder: "최대", "aria-label": "포함 최대 개수", style: "width:5rem" });
+    const exName = h("input", { type: "text", placeholder: "이름", "aria-label": "표현식 이름" });
+    const exSrc = h("input", { type: "text", placeholder: "예: sum >= 100 && sum <= 175 && odd == 3 && !has(7)", "aria-label": "표현식", style: "min-width:18rem" });
+    const add = (rule: FilterRule) => { state.rules.push(rule); void persist(); drawFilters(); refresh(); };
+    box.append(
+      h("div", { class: "row" }, setName, setNums, setMin, setMax, h("button", { type: "button", onclick: () => {
+        const nums = parseValues((setNums as HTMLInputElement).value);
+        const mn = (setMin as HTMLInputElement).value, mx = (setMax as HTMLInputElement).value;
+        if (!nums.length || nums.some((n) => n < 1 || n > 45) || new Set(nums).size !== nums.length) { clear(msg); msg.append(notice("error", "1~45 사이 중복 없는 번호를 입력하세요.")); return; }
+        add({ key: `set:${uid()}`, label: (setName as HTMLInputElement).value || "내 번호 집합", set: nums.sort((a, b) => a - b), ...(mn !== "" ? { min: Number(mn) } : {}), ...(mx !== "" ? { max: Number(mx) } : {}) });
+      } }, "번호 집합 추가")),
+      h("div", { class: "row" }, exName, exSrc, h("button", { type: "button", onclick: () => {
+        const src = (exSrc as HTMLInputElement).value.trim();
+        const chk = checkExpr(src);
+        if (!chk.ok) { clear(msg); msg.append(notice("error", chk.error)); return; }
+        add({ key: `expr:${uid()}`, label: (exName as HTMLInputElement).value || "내 표현식", expr: src });
+      } }, "표현식 추가")),
+      h("p", { class: "muted" }, "표현식: 필터 이름(sum, ac, odd …)·n1~n6·has(n)·min/max/abs와 + - * / % < > == != && || ! 를 쓸 수 있습니다. 임의 코드는 실행되지 않습니다."),
+      msg,
+    );
+    return box;
+  }
+
+  function backtestBox() {
+    const box = h("div", { class: "card" }, h("strong", {}, "과거 통과율"));
+    const out2 = h("div");
+    box.append(h("button", { type: "button", onclick: () => {
+      clear(out2);
+      if (state.draws.state !== "ok") { out2.append(notice("info", "당첨 이력 데이터가 없어 계산할 수 없습니다.")); return; }
+      const draws = state.draws.draws.filter((d) => d.round < targetRound());
+      const r = backtest(state.rules, draws);
+      out2.append(notice("info", `현재 활성 필터가 과거 ${r.tested}회 당첨번호 중 ${r.passed}회(${r.tested ? ((r.passed / r.tested) * 100).toFixed(1) : 0}%)를 통과시켰습니다.${r.skipped ? ` (이력이 필요한 필터 때문에 첫 ${r.skipped}회 제외)` : ""} 이 비율은 구매 조합의 당첨률이 아닙니다.`));
+    } }, "과거 회차로 확인"), out2);
+    return box;
+  }
+
   function drawFilters() {
     clear(filterBox);
+    filterBox.append(customSection(), backtestBox());
     const groups = [...new Set(FILTERS.map((f) => f.group))];
-    for (const g of groups) {
-      filterBox.append(h("h3", {}, g), h("div", { class: "cards" }, ...FILTERS.filter((f) => f.group === g).map(filterCard)));
-    }
+    groups.forEach((g, gi) => {
+      const list = FILTERS.filter((f) => f.group === g);
+      const active = list.filter((f) => getRule(f.key)).length;
+      filterBox.append(h("details", { open: gi === 0 || active > 0 }, h("summary", {}, h("strong", {}, `${g} (${list.length}개${active ? ` · 사용 중 ${active}` : ""})`)), h("div", { class: "cards" }, ...list.map(filterCard))));
+    });
   }
 
   // ---- 실행 ----
@@ -263,7 +314,7 @@ export function renderGenerate(root: HTMLElement) {
     out.append(h("div", { class: "scroll" }, t));
     const rej = Object.entries(rejected).sort((a, b) => b[1] - a[1]);
     if (rej.length) {
-      out.append(h("details", {}, h("summary", {}, "필터별 탈락 내역 (적용 순서상 처음 걸린 필터 기준)"), h("ul", {}, ...rej.map(([k, v]) => h("li", {}, `${FILTER_BY_KEY.get(k)?.label ?? k}: ${v.toLocaleString()}회`)))));
+      out.append(h("details", {}, h("summary", {}, "필터별 탈락 내역 (적용 순서상 처음 걸린 필터 기준)"), h("ul", {}, ...rej.map(([k, v]) => h("li", {}, `${labelOf(k)}: ${v.toLocaleString()}회`)))));
     }
     const batch: Batch = {
       id: uid(),
@@ -302,7 +353,7 @@ export function renderGenerate(root: HTMLElement) {
     if (r.cumulative.length) {
       const t = h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "필터(적용 순서)"), h("th", {}, "누적 남은 수"), h("th", {}, "단독 통과 수"))));
       const tb = h("tbody");
-      r.cumulative.forEach((c) => tb.append(h("tr", {}, h("td", {}, FILTER_BY_KEY.get(c.key)?.label ?? c.key), h("td", {}, c.remaining.toLocaleString()), h("td", {}, (r.independent[c.key] ?? 0).toLocaleString()))));
+      r.cumulative.forEach((c) => tb.append(h("tr", {}, h("td", {}, labelOf(c.key)), h("td", {}, c.remaining.toLocaleString()), h("td", {}, (r.independent[c.key] ?? 0).toLocaleString()))));
       t.append(tb);
       out.append(h("div", { class: "scroll" }, t));
     }

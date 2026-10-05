@@ -76,3 +76,35 @@ export function isValidCombo(c: readonly number[]): boolean {
   }
   return true;
 }
+
+// ---- 확장 지표 ----
+export const first = (c: Combo) => Math.min(...c);
+export const last = (c: Combo) => Math.max(...c);
+/** 첫 수와 끝 수의 차 */
+export const span = (c: Combo) => last(c) - first(c);
+
+function gaps(c: Combo): number[] {
+  const s = sortCombo(c);
+  return s.slice(1).map((n, i) => n - s[i]!);
+}
+/** 이웃한 두 수 사이 간격의 최솟값/최댓값 */
+export const minGap = (c: Combo) => Math.min(...gaps(c));
+export const maxGap = (c: Combo) => Math.max(...gaps(c));
+
+/** 쌍둥이수(11,22,33,44) 개수 */
+export const twinCount = (c: Combo) => count(c, (n) => n % 11 === 0);
+/** 일의 자리가 같은 쌍의 개수 (같은 끝수가 3개면 3쌍) */
+export function sameEndPairs(c: Combo): number {
+  const f = new Array<number>(10).fill(0);
+  for (const n of c) f[n % 10]!++;
+  return f.reduce((a, k) => a + (k * (k - 1)) / 2, 0);
+}
+export const endDigitCount = (d: number) => (c: Combo) => count(c, (n) => n % 10 === d);
+/** 번호대별 개수: 1=1~10, 2=11~20, 3=21~30, 4=31~40, 5=41~45 */
+export const bandCount = (b: number) => (c: Combo) => count(c, (n) => Math.ceil(n / 10) === b);
+export const multipleOf4Count = (c: Combo) => count(c, (n) => n % 4 === 0);
+export const multipleOf7Count = (c: Combo) => count(c, (n) => n % 7 === 0);
+
+/** 용지(7칸×7줄: 1~7, 8~14, … 43~45)에서 번호가 걸친 행 수 / 열 수 */
+export const ticketRows = (c: Combo) => new Set(c.map((n) => Math.ceil(n / 7))).size;
+export const ticketCols = (c: Combo) => new Set(c.map((n) => ((n - 1) % 7) + 1)).size;
