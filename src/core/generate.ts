@@ -29,6 +29,7 @@ export function validateOptions(o: Pick<GenerateOptions, "fixed" | "exclude" | "
     p.push({ code: "pool-small", message: `고를 수 있는 번호가 ${pool.length}개뿐이라 ${need}개를 채울 수 없습니다.` });
   }
   for (const r of o.rules) {
+    if (r.enabled === false) continue;
     if (r.expr !== undefined) {
       const chk = checkExpr(r.expr);
       if (!chk.ok) {

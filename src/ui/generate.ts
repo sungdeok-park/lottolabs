@@ -1,5 +1,6 @@
 import { countSpace, createGenerator, validateOptions } from "../core/generate";
-import { FILTERS, FILTER_BY_KEY, REGRESS_MAX, checkExpr, describeRule, parseRegressKey, regressKey, type FilterDef } from "../core/filters";
+import { FILTERS, FILTER_BY_KEY, REGRESS_MAX, checkExpr, describeRule, effectiveRules, parseRegressKey, regressKey, type FilterDef } from "../core/filters";
+import { diagnose } from "../core/diagnose";
 import { backtest, recentMetricRange, regressionRecentRange } from "../core/stats";
 import { acValue, highCount, oddCount, sum } from "../core/metrics";
 import { historyBefore } from "../core/draws";
@@ -23,6 +24,8 @@ function parseValues(s: string): number[] {
 function targetRound() {
   return state.targetRound > 0 ? state.targetRound : nextRound();
 }
+
+const activeRules = () => effectiveRules(state.rules, targetRound());
 
 function history() {
   return state.draws.state === "ok" ? historyBefore(state.draws.draws, targetRound()) : undefined;
@@ -54,7 +57,7 @@ export function renderGenerate(root: HTMLElement) {
 
   const refresh = () => {
     clear(problems);
-    const errs = validateOptions({ ...state.picks, rules: state.rules, count: 1 }, !!history());
+    const errs = validateOptions({ ...state.picks, rules: activeRules(), count: 1 }, !!history());
     for (const e of errs) problems.append(notice("error", e.message));
     drawBoard();
     summary();
@@ -63,12 +66,13 @@ export function renderGenerate(root: HTMLElement) {
   const summaryBox = h("div", { class: "summary" });
   const summary = () => {
     clear(summaryBox);
-    const active = state.rules.length;
+    const act = activeRules();
+    const active = act.length;
     const p = state.picks;
     summaryBox.append(
       h("strong", {}, "현재 조건"),
       h("div", {}, `고정 ${p.fixed.join(", ") || "없음"} · 제외 ${p.exclude.join(", ") || "없음"} · 후보 ${p.candidates.length ? p.candidates.length + "개" : "전체"}`),
-      h("div", {}, active ? [...state.rules.filter((r) => parseRegressKey(r.key) === null).map(describeRule), ...(state.rules.some((r) => parseRegressKey(r.key) !== null) ? [`회귀 ${state.rules.filter((r) => parseRegressKey(r.key) !== null).length}개`] : [])].join(" · ") : "필터: 제한 없음"),
+      h("div", {}, active ? [...act.filter((r) => parseRegressKey(r.key) === null).map(describeRule), ...(act.some((r) => parseRegressKey(r.key) !== null) ? [`회귀 ${act.filter((r) => parseRegressKey(r.key) !== null).length}개`] : [])].join(" · ") : "필터: 제한 없음"),
     );
   };
 
@@ -207,31 +211,50 @@ export function renderGenerate(root: HTMLElement) {
   }
 
   function customSection() {
-    const box = h("div", { class: "card" }, h("strong", {}, "내 필터 (번호 집합 · 표현식)"));
+    const box = h("div", { class: "card" }, h("strong", {}, "내 필터 (수동 번호 집합 · 표현식)"));
+    const target = targetRound();
+    const isStale = (r: FilterRule) => r.round !== undefined && !r.preserve && r.round < target;
     const mine = state.rules.filter((r) => r.set || r.expr !== undefined);
-    for (const r of mine) {
-      box.append(h("div", { class: "row between" }, h("span", {}, describeRule(r) + (r.set ? ` ← {${r.set.join(",")}}` : "")), h("button", { type: "button", class: "danger", onclick: () => { state.rules = state.rules.filter((x) => x !== r); void persist(); drawFilters(); refresh(); } }, "삭제")));
-    }
+    const save = () => { void persist(); drawFilters(); refresh(); };
+    const row = (r: FilterRule, stale: boolean) => h("div", { class: "row between", style: stale ? "opacity:.6" : "" },
+      h("label", { class: "toggle", style: "min-height:32px" },
+        h("input", { type: "checkbox", checked: r.enabled !== false && !stale, disabled: stale, "aria-label": `${r.label ?? r.key} 적용`, onchange: (e: Event) => { r.enabled = (e.target as HTMLInputElement).checked; save(); } }),
+        h("span", {}, describeRule({ ...r, enabled: undefined }) + (r.set ? ` ← {${r.set.join(",")}}` : "")),
+        r.round !== undefined ? h("small", { class: "muted" }, `${r.round}회차${stale ? " (지난 회차)" : ""}`) : null),
+      h("span", { class: "row" },
+        h("label", { title: "회차가 바뀌어도 유지" }, h("input", { type: "checkbox", checked: !!r.preserve, onchange: (e: Event) => { r.preserve = (e.target as HTMLInputElement).checked; save(); } }), " 보존"),
+        h("button", { type: "button", class: "danger", onclick: () => { state.rules = state.rules.filter((x) => x !== r); save(); } }, "삭제")));
+    for (const r of mine.filter((x) => !isStale(x))) box.append(row(r, false));
+    const stale = mine.filter(isStale);
+    if (stale.length) box.append(h("details", {}, h("summary", {}, `이전 회차 필터 (${stale.length}개) — 적용되지 않음`), ...stale.map((r) => row(r, true)), h("button", { type: "button", class: "danger", onclick: () => { if (confirm(`이전 회차 필터 ${stale.length}개를 모두 삭제할까요?`)) { state.rules = state.rules.filter((x) => !isStale(x) || !(x.set || x.expr !== undefined)); save(); } } }, "이전 회차 전체 삭제")));
     const msg = h("div", { role: "status" });
-    const setName = h("input", { type: "text", placeholder: "이름 (예: 내 후보 A)", "aria-label": "번호 집합 이름" });
-    const setNums = h("input", { type: "text", placeholder: "번호 (예: 3,8,14,22,31)", "aria-label": "번호 집합 번호" });
-    const setMin = h("input", { type: "number", min: 0, max: 6, placeholder: "최소", "aria-label": "포함 최소 개수", style: "width:5rem" });
-    const setMax = h("input", { type: "number", min: 0, max: 6, placeholder: "최대", "aria-label": "포함 최대 개수", style: "width:5rem" });
+    const err = (t: string) => { clear(msg); msg.append(notice("error", t)); };
+    const setName = h("input", { type: "text", placeholder: "필터 제목 (예: 내 후보 A)", "aria-label": "번호 집합 이름" });
+    const setNums = h("input", { type: "text", placeholder: "번호 직접 입력 (예: 3, 8, 14, 22, 31)", "aria-label": "번호 집합 번호", style: "min-width:16rem" });
+    const setMin = h("input", { type: "number", min: 0, max: 6, value: "1", "aria-label": "포함 최소 개수", style: "width:5rem" });
+    const setMax = h("input", { type: "number", min: 0, max: 6, value: "6", "aria-label": "포함 최대 개수", style: "width:5rem" });
+    const setKeep = h("input", { type: "checkbox", id: "set-keep" });
     const exName = h("input", { type: "text", placeholder: "이름", "aria-label": "표현식 이름" });
     const exSrc = h("input", { type: "text", placeholder: "예: sum >= 100 && sum <= 175 && odd == 3 && !has(7)", "aria-label": "표현식", style: "min-width:18rem" });
-    const add = (rule: FilterRule) => { state.rules.push(rule); void persist(); drawFilters(); refresh(); };
+    const add = (rule: FilterRule) => { state.rules.push({ ...rule, round: target }); save(); };
     box.append(
-      h("div", { class: "row" }, setName, setNums, setMin, setMax, h("button", { type: "button", onclick: () => {
-        const nums = parseValues((setNums as HTMLInputElement).value);
-        const mn = (setMin as HTMLInputElement).value, mx = (setMax as HTMLInputElement).value;
-        if (!nums.length || nums.some((n) => n < 1 || n > 45) || new Set(nums).size !== nums.length) { clear(msg); msg.append(notice("error", "1~45 사이 중복 없는 번호를 입력하세요.")); return; }
-        add({ key: `set:${uid()}`, label: (setName as HTMLInputElement).value || "내 번호 집합", set: nums.sort((a, b) => a - b), ...(mn !== "" ? { min: Number(mn) } : {}), ...(mx !== "" ? { max: Number(mx) } : {}) });
-      } }, "번호 집합 추가")),
+      h("div", { class: "row" }, setName, setNums, h("label", {}, "최소 ", setMin), h("label", {}, "최대 ", setMax), h("label", {}, setKeep, " 보존"), h("button", { type: "button", onclick: () => {
+        const tokens = (setNums as HTMLInputElement).value.split(/[\s,;/.|-]+/).filter(Boolean);
+        const nums = tokens.map((t) => parseInt(t, 10));
+        if (!nums.length || nums.some((n) => !(n >= 1 && n <= 45))) return err("1~45 사이 번호를 입력하세요. (쉼표·공백으로 구분)");
+        if (new Set(nums).size !== nums.length) return err("중복된 번호가 있습니다.");
+        const size = nums.length;
+        const mn = Math.max(0, Math.min(size, parseInt((setMin as HTMLInputElement).value, 10) || 0));
+        const mx = Math.max(0, Math.min(size, 6, parseInt((setMax as HTMLInputElement).value, 10) || 0));
+        if (mn > mx) return err("최소가 최대보다 클 수 없습니다.");
+        add({ key: `set:${uid()}`, label: (setName as HTMLInputElement).value.trim() || "내 번호 집합", set: nums.sort((a, b) => a - b), min: mn, max: mx, preserve: (setKeep as HTMLInputElement).checked, enabled: true });
+      } }, "수동필터 추가")),
+      h("p", { class: "muted" }, "최소·최대는 이 집합의 번호가 한 조합에 들어가는 개수입니다. 선택한 번호가 6개 미만이면 최대는 그 개수로 제한됩니다."),
       h("div", { class: "row" }, exName, exSrc, h("button", { type: "button", onclick: () => {
         const src = (exSrc as HTMLInputElement).value.trim();
         const chk = checkExpr(src);
-        if (!chk.ok) { clear(msg); msg.append(notice("error", chk.error)); return; }
-        add({ key: `expr:${uid()}`, label: (exName as HTMLInputElement).value || "내 표현식", expr: src });
+        if (!chk.ok) return err(chk.error);
+        add({ key: `expr:${uid()}`, label: (exName as HTMLInputElement).value || "내 표현식", expr: src, enabled: true });
       } }, "표현식 추가")),
       h("p", { class: "muted" }, "표현식: 필터 이름(sum, ac, odd …)·n1~n6·has(n)·min/max/abs와 + - * / % < > == != && || ! 를 쓸 수 있습니다. 임의 코드는 실행되지 않습니다."),
       msg,
@@ -240,70 +263,70 @@ export function renderGenerate(root: HTMLElement) {
   }
 
   let regressNote: ["ok" | "warn" | "error" | "info", string] | null = null;
+  let regOpen = false;
+  const openGroups = new Set<string>();
   function regressionSection() {
-    const box = h("div", { class: "card" }, h("strong", {}, "회귀 필터"), h("p", { class: "muted" }, "N회귀: 목표 회차에서 N회 전 당첨 본번호와 겹치는 번호의 개수입니다. 1~200회귀까지 동시에 걸 수 있습니다. (1회귀는 이월수와 같음)"));
-    const regs = () => state.rules.filter((r) => parseRegressKey(r.key) !== null);
+    const regSteps = Array.from({ length: REGRESS_MAX }, (_, i) => i + 1);
+    const getReg = (n: number) => state.rules.find((r) => r.key === regressKey(n));
+    const onCount = () => regSteps.filter((n) => { const r = getReg(n); return r && r.enabled !== false; }).length;
+    const box = h("details", { class: "card", open: regOpen || onCount() > 0 },
+      h("summary", {}, h("strong", {}, "회귀 필터 (1~200회귀)"), " ", h("span", { class: "state yes", id: "reg-count" }, `${onCount()}개 켜짐`)));
+    box.addEventListener("toggle", () => { regOpen = box.open; });
+    box.append(h("p", { class: "muted" }, "N회귀: 목표 회차에서 N회 전 당첨 본번호와 겹치는 번호의 개수입니다. 1회귀는 이월수와 같고, 1~200회귀를 모두 동시에 켤 수 있습니다."));
     const msg = h("div", { role: "status" });
-    const nIn = h("input", { type: "number", min: 1, max: REGRESS_MAX, value: "2", "aria-label": "회귀 N", style: "width:5rem" });
-    const mnIn = h("input", { type: "number", min: 0, max: 6, value: "0", "aria-label": "회귀 최소", style: "width:4.5rem" });
-    const mxIn = h("input", { type: "number", min: 0, max: 6, value: "6", "aria-label": "회귀 최대", style: "width:4.5rem" });
-    const clamp = (v: string, d: number) => Math.max(0, Math.min(6, Number.isFinite(parseInt(v, 10)) ? parseInt(v, 10) : d));
-    const setSteps = (steps: number[], range: (step: number) => { min: number; max: number } | null) => {
-      const keys = new Set(steps.map(regressKey));
-      state.rules = state.rules.filter((r) => !keys.has(r.key));
-      let n = 0;
-      for (const st of steps) {
-        const r = range(st);
-        if (r) { state.rules.push({ key: regressKey(st), min: r.min, max: r.max }); n++; }
-      }
-      void persist(); drawFilters(); refresh();
-      return n;
-    };
     const say = (kind: "ok" | "warn" | "error" | "info", t: string) => { regressNote = [kind, t]; clear(msg); msg.append(notice(kind, t)); };
     const history2 = () => (state.draws.state === "ok" ? state.draws.draws.filter((d) => d.round < targetRound()) : []);
-    const all = Array.from({ length: REGRESS_MAX }, (_, i) => i + 1);
+    const badge = () => { const el = document.getElementById("reg-count"); if (el) el.textContent = `${onCount()}개 켜짐`; };
+    const clamp = (v: string, d: number) => Math.max(0, Math.min(6, Number.isFinite(parseInt(v, 10)) ? parseInt(v, 10) : d));
+    const ensure = (n: number): FilterRule => {
+      let r = getReg(n);
+      if (!r) { r = { key: regressKey(n), min: 0, max: 6, enabled: false }; state.rules.push(r); }
+      return r;
+    };
+    const changed = () => { void persist(); badge(); refresh(); };
+
+    const bMin = h("input", { type: "number", min: 0, max: 6, placeholder: "0", "aria-label": "일괄 최소", style: "width:4.5rem" });
+    const bMax = h("input", { type: "number", min: 0, max: 6, placeholder: "6", "aria-label": "일괄 최대", style: "width:4.5rem" });
+    const bulkRange = () => ({ min: clamp((bMin as HTMLInputElement).value, 0), max: clamp((bMax as HTMLInputElement).value, 6) });
+    const redraw = () => { void persist(); drawFilters(); refresh(); };
     box.append(
       h("div", { class: "row" },
-        h("label", {}, "N ", nIn), h("label", {}, "최소 ", mnIn), h("label", {}, "최대 ", mxIn),
-        h("button", { type: "button", onclick: () => {
-          const n = Math.floor(Number((nIn as HTMLInputElement).value));
-          if (!(n >= 1 && n <= REGRESS_MAX)) return say("error", `N은 1~${REGRESS_MAX} 사이여야 합니다.`);
-          const mn = clamp((mnIn as HTMLInputElement).value, 0), mx = clamp((mxIn as HTMLInputElement).value, 6);
-          if (mn > mx) return say("error", "최소가 최대보다 큽니다.");
-          setSteps([n], () => ({ min: mn, max: mx }));
-        } }, "추가"),
-        h("button", { type: "button", onclick: () => {
-          const n = Math.floor(Number((nIn as HTMLInputElement).value));
-          const r = regressionRecentRange(history2(), targetRound(), n);
-          if (!r) return say("info", "이력이 없어 최근 범위를 계산할 수 없습니다.");
-          (mnIn as HTMLInputElement).value = String(r.min); (mxIn as HTMLInputElement).value = String(r.max);
-          say("info", `${n}회귀 최근 ${r.samples}회 범위: ${r.min}~${r.max}`);
-        } }, "최근 10회 범위 불러오기")),
-      h("div", { class: "row" },
-        h("button", { type: "button", onclick: () => {
-          const mn = clamp((mnIn as HTMLInputElement).value, 0), mx = clamp((mxIn as HTMLInputElement).value, 6);
-          if (mn > mx) return say("error", "최소가 최대보다 큽니다.");
-          setSteps(all, () => ({ min: mn, max: mx }));
-        } }, "1~200회귀 일괄 적용 (위 최소·최대)"),
+        h("span", {}, "일괄 적용"), bMin, "~", bMax,
+        h("button", { type: "button", class: "primary", onclick: () => {
+          const { min, max } = bulkRange();
+          if (min > max) return say("error", "최소가 최대보다 큽니다.");
+          for (const n of regSteps) Object.assign(ensure(n), { min, max, enabled: true });
+          say("ok", `1~200회귀 ${REGRESS_MAX}개를 ${min}~${max}로 켰습니다.`); redraw();
+        } }, "일괄 필터 적용"),
+        h("button", { type: "button", onclick: () => { for (const n of regSteps) ensure(n).enabled = true; say("ok", "전체 ON"); redraw(); } }, "전체 ON"),
+        h("button", { type: "button", onclick: () => { for (const r of state.rules) if (parseRegressKey(r.key) !== null) r.enabled = false; say("info", "전체 OFF (설정값은 유지)"); redraw(); } }, "전체 OFF"),
         h("button", { type: "button", onclick: () => {
           if (state.draws.state !== "ok") return say("info", "당첨 이력이 없어 계산할 수 없습니다.");
           const hist = history2();
           let withData = 0;
-          setSteps(all, (st) => {
-            const r = regressionRecentRange(hist, targetRound(), st);
-            if (r) withData++;
-            return r ?? { min: 0, max: 6 }; // 표본이 없는 회귀는 제한 없음(0~6)으로 걸어 둔다
-          });
-          say("ok", `${all.length}개 회귀를 걸었습니다. 최근 10회 기준 범위를 계산한 것은 ${withData}개이고, 이력이 모자라 표본이 없는 ${all.length - withData}개는 0~6(제한 없음)입니다.`);
-          drawFilters();
+          for (const n of regSteps) {
+            const rg = regressionRecentRange(hist, targetRound(), n);
+            if (rg) withData++;
+            Object.assign(ensure(n), { min: rg?.min ?? 0, max: rg?.max ?? 6, enabled: true });
+          }
+          say("ok", `${REGRESS_MAX}개 회귀를 켰습니다. 최근 10회 기준 범위를 계산한 것은 ${withData}개이고, 이력이 모자란 ${REGRESS_MAX - withData}개는 0~6(제한 없음)입니다.`); redraw();
         } }, "최근 10회 기준 일괄 적용 (원본 방식)"),
-        h("button", { type: "button", class: "danger", onclick: () => { state.rules = state.rules.filter((r) => parseRegressKey(r.key) === null); void persist(); drawFilters(); refresh(); } }, "회귀 필터 모두 해제")),
+        h("button", { type: "button", class: "danger", onclick: () => { state.rules = state.rules.filter((r) => parseRegressKey(r.key) === null); say("info", "회귀 필터 설정을 모두 지웠습니다."); redraw(); } }, "설정 모두 삭제")),
     );
-    const cur = regs();
-    if (cur.length && cur.length <= 12) for (const r of cur) box.append(h("div", {}, describeRule(r)));
-    else if (cur.length) box.append(h("div", {}, `회귀 필터 ${cur.length}개 사용 중`));
+    const t = h("table", {}, h("thead", {}, h("tr", {}, ...["회귀", "사용", "최소", "최대"].map((x) => h("th", {}, x)))));
+    const tb = h("tbody");
+    for (const n of regSteps) {
+      const r = getReg(n);
+      tb.append(h("tr", {},
+        h("td", {}, `${n}회귀`),
+        h("td", {}, h("input", { type: "checkbox", checked: !!r && r.enabled !== false, "aria-label": `${n}회귀 사용`, onchange: (e: Event) => { ensure(n).enabled = (e.target as HTMLInputElement).checked; changed(); } })),
+        h("td", {}, h("input", { type: "number", min: 0, max: 6, value: String(r?.min ?? 0), "aria-label": `${n}회귀 최소`, style: "width:4.5rem", onchange: (e: Event) => { ensure(n).min = clamp((e.target as HTMLInputElement).value, 0); changed(); } })),
+        h("td", {}, h("input", { type: "number", min: 0, max: 6, value: String(r?.max ?? 6), "aria-label": `${n}회귀 최대`, style: "width:4.5rem", onchange: (e: Event) => { ensure(n).max = clamp((e.target as HTMLInputElement).value, 6); changed(); } })),
+      ));
+    }
+    t.append(tb);
     if (regressNote) msg.append(notice(regressNote[0], regressNote[1]));
-    box.append(msg);
+    box.append(msg, h("div", { class: "scroll", style: "max-height:420px;overflow:auto" }, t));
     return box;
   }
 
@@ -314,7 +337,7 @@ export function renderGenerate(root: HTMLElement) {
       clear(out2);
       if (state.draws.state !== "ok") { out2.append(notice("info", "당첨 이력 데이터가 없어 계산할 수 없습니다.")); return; }
       const draws = state.draws.draws.filter((d) => d.round < targetRound());
-      const r = backtest(state.rules, draws);
+      const r = backtest(activeRules(), draws);
       out2.append(notice("info", `현재 활성 필터가 과거 ${r.tested}회 당첨번호 중 ${r.passed}회(${r.tested ? ((r.passed / r.tested) * 100).toFixed(1) : 0}%)를 통과시켰습니다.${r.skipped ? ` (이력이 필요한 필터 때문에 첫 ${r.skipped}회 제외)` : ""} 이 비율은 구매 조합의 당첨률이 아닙니다.`));
     } }, "과거 회차로 확인"), out2);
     return box;
@@ -343,7 +366,9 @@ export function renderGenerate(root: HTMLElement) {
             } }, `${g} 최근 10회 범위 일괄 적용`),
             h("button", { type: "button", class: "danger", onclick: () => { const keys = new Set(list.map((f) => f.key)); state.rules = state.rules.filter((r) => !keys.has(r.key)); void persist(); drawFilters(); refresh(); } }, `${g} 필터 해제`))
         : "";
-      filterBox.append(h("details", { open: gi === 0 || active > 0 }, h("summary", {}, h("strong", {}, `${g} (${list.length}개${active ? ` · 사용 중 ${active}` : ""})`)), groupTools, h("div", { class: "cards" }, ...list.map(filterCard))));
+      const det = h("details", { open: gi === 0 || active > 0 || openGroups.has(g) }, h("summary", {}, h("strong", {}, `${g} (${list.length}개${active ? ` · 사용 중 ${active}` : ""})`)), groupTools, h("div", { class: "cards" }, ...list.map(filterCard)));
+      det.addEventListener("toggle", () => { if (det.open) openGroups.add(g); else openGroups.delete(g); });
+      filterBox.append(det);
     });
   }
 
@@ -351,20 +376,22 @@ export function renderGenerate(root: HTMLElement) {
   const countInput = h("input", { type: "number", id: "count", min: 1, max: MAX_COUNT, value: "10" });
   const runBtn = h("button", { type: "button", class: "primary", onclick: () => void run() }, "조합 생성");
   const cancelBtn = h("button", { type: "button", hidden: true, onclick: () => (cancel = true) }, "취소");
-  const analyzeBtn = h("button", { type: "button", onclick: () => void analyze() }, "정확한 조합 수 분석");
+  const analyzeBtn = h("button", { type: "button", onclick: () => void analyze() }, "단계별 분석 (정확한 조합 수)");
+  const diagnoseBtn = h("button", { type: "button", onclick: () => void runDiagnose() }, "필터 진단");
   const progress = h("div", { role: "status", "aria-live": "polite" });
 
   const setRunning = (r: boolean) => {
     running = r;
     runBtn.disabled = r;
     analyzeBtn.disabled = r;
+    diagnoseBtn.disabled = r;
     cancelBtn.hidden = !r;
   };
 
   async function run() {
     if (running) return;
     const count = Math.min(MAX_COUNT, Math.max(1, Math.floor(Number((countInput as HTMLInputElement).value))));
-    const errs = validateOptions({ ...state.picks, rules: state.rules, count }, !!history());
+    const errs = validateOptions({ ...state.picks, rules: activeRules(), count }, !!history());
     clear(out);
     if (errs.length) {
       out.append(notice("error", "조건을 수정한 뒤 다시 실행해 주세요."));
@@ -372,7 +399,7 @@ export function renderGenerate(root: HTMLElement) {
     }
     cancel = false;
     setRunning(true);
-    const gen = createGenerator({ count, ...state.picks, rules: state.rules, history: history(), maxAttempts: 3_000_000 });
+    const gen = createGenerator({ count, ...state.picks, rules: activeRules(), history: history(), maxAttempts: 3_000_000 });
     while (!gen.finished) {
       gen.step(20000, () => cancel);
       const p = gen.progress();
@@ -417,7 +444,7 @@ export function renderGenerate(root: HTMLElement) {
   }
 
   async function analyze() {
-    const errs = validateOptions({ ...state.picks, rules: state.rules, count: 1 }, !!history());
+    const errs = validateOptions({ ...state.picks, rules: activeRules(), count: 1 }, !!history());
     clear(out);
     if (errs.length) {
       out.append(notice("error", "조건을 수정한 뒤 다시 실행해 주세요."));
@@ -426,7 +453,7 @@ export function renderGenerate(root: HTMLElement) {
     cancel = false;
     setRunning(true);
     progress.textContent = "전체 조합을 세는 중… (조건에 따라 수 초 걸릴 수 있습니다)";
-    const r = await countSpace({ ...state.picks, rules: state.rules, history: history() }, { shouldStop: () => cancel });
+    const r = await countSpace({ ...state.picks, rules: activeRules(), history: history() }, { shouldStop: () => cancel });
     setRunning(false);
     progress.textContent = "";
     if (r.cancelled) {
@@ -442,6 +469,32 @@ export function renderGenerate(root: HTMLElement) {
       out.append(h("div", { class: "scroll" }, t));
     }
     out.append(h("p", { class: "muted" }, "통과 조합 수는 당첨 확률과 무관합니다. 모든 조합의 당첨 확률은 같습니다."));
+  }
+
+  async function runDiagnose() {
+    const errs = validateOptions({ ...state.picks, rules: activeRules(), count: 1 }, !!history());
+    clear(out);
+    if (errs.length) return void out.append(notice("error", "조건을 수정한 뒤 다시 실행해 주세요."));
+    if (!activeRules().length) return void out.append(notice("info", "켜져 있는 필터가 없어 진단할 내용이 없습니다."));
+    cancel = false;
+    setRunning(true);
+    progress.textContent = "필터를 진단하는 중… (전체 조합을 훑습니다. 조건에 따라 시간이 걸릴 수 있습니다)";
+    const d = await diagnose({ ...state.picks, rules: activeRules(), history: history() }, { shouldStop: () => cancel });
+    setRunning(false);
+    progress.textContent = "";
+    if (d.cancelled) return void out.append(notice("warn", "취소했습니다. 부분 결과는 표시하지 않습니다."));
+    out.append(h("h3", {}, "필터 진단"), h("p", {}, `후보 공간 ${d.total.toLocaleString()}개 중 모든 필터 통과 ${d.passed.toLocaleString()}개. 필터 1개만 어겨 탈락 ${d.failedHistogram[1].toLocaleString()}개, 2개 이상 어겨 탈락 ${d.failedHistogram[2].toLocaleString()}개.`));
+    const top = d.rules.filter((r) => r.blockedAlone > 0);
+    if (d.passed === 0) {
+      out.append(notice("warn", top.length ? `통과하는 조합이 없습니다. 가장 많이 막는 필터는 '${labelOf(top[0]!.key)}'이며, 이것 하나만 끄면 ${top[0]!.blockedAlone.toLocaleString()}개가 되살아납니다.` : "통과하는 조합이 없습니다. 어느 필터 하나만 꺼서는 풀리지 않고 여러 필터가 함께 막고 있습니다."));
+    }
+    if (top.length) {
+      const t = h("table", {}, h("caption", {}, "이 필터 하나만 끄면 되살아나는 조합 수 (많이 막는 순)"), h("thead", {}, h("tr", {}, h("th", {}, "필터"), h("th", {}, "단독 차단 조합 수"))));
+      const tb = h("tbody");
+      for (const r of top.slice(0, 30)) tb.append(h("tr", {}, h("td", {}, labelOf(r.key)), h("td", {}, r.blockedAlone.toLocaleString())));
+      t.append(tb);
+      out.append(h("div", { class: "scroll" }, t), top.length > 30 ? h("p", { class: "muted" }, `상위 30개만 표시했습니다 (전체 ${top.length}개).`) : "");
+    }
   }
 
   const presetSel = h("select", { "aria-label": "프리셋" }, h("option", { value: "" }, "프리셋 선택"), ...state.presets.map((p, i) => h("option", { value: String(i) }, p.name)));
@@ -481,7 +534,7 @@ export function renderGenerate(root: HTMLElement) {
     h("section", {}, h("h3", {}, "3. 필터"), presetBar, filterBox),
     summaryBox,
     problems,
-    h("section", { class: "sticky" }, h("h3", {}, "4. 생성"), h("div", { class: "row" }, h("label", { for: "count" }, "개수"), ...[5, 10, 20, 50, 100].map((n) => h("button", { type: "button", onclick: () => ((countInput as HTMLInputElement).value = String(n)) }, String(n))), countInput, runBtn, analyzeBtn, cancelBtn), progress),
+    h("section", { class: "sticky" }, h("h3", {}, "4. 생성"), h("div", { class: "row" }, h("label", { for: "count" }, "개수"), ...[5, 10, 20, 50, 100].map((n) => h("button", { type: "button", onclick: () => ((countInput as HTMLInputElement).value = String(n)) }, String(n))), countInput, runBtn, analyzeBtn, diagnoseBtn, cancelBtn), progress),
     out,
   );
   drawFilters();

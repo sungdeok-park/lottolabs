@@ -489,3 +489,61 @@ describe("회귀 200개 동시 적용", () => {
     }
   }, 60000);
 });
+
+import { diagnose } from "../src/core/diagnose";
+import { effectiveRules } from "../src/core/filters";
+import { forEachCombo } from "../src/core/enumerate";
+
+describe("끄기·보존·회차 (원본 수동필터 동작)", () => {
+  it("꺼진 규칙은 검증·생성·열거에서 모두 무시한다", async () => {
+    const rules = [{ key: "sum", min: 200, max: 100, enabled: false }, { key: "odd", values: [3] }];
+    expect(validateOptions({ count: 1, fixed: [], exclude: [], candidates: [], rules }, false)).toEqual([]);
+    const r = generate({ count: 20, fixed: [], exclude: [], candidates: [], rules, maxAttempts: 100000 });
+    expect(r.combos).toHaveLength(20);
+    for (const c of r.combos) expect(m.oddCount(c)).toBe(3);
+    const cnt = await countSpace({ fixed: [], exclude: [], candidates: Array.from({ length: 10 }, (_, i) => i + 1), rules });
+    expect(cnt.passed).toBe(binom(5, 3) * binom(5, 3));
+    expect(cnt.cumulative).toHaveLength(1);
+  });
+  it("이전 회차용 비보존 규칙은 제외, 보존 규칙은 유지", () => {
+    const rules = [
+      { key: "a", set: [1, 2], round: 10 }, // 이전 회차, 비보존 → 제외
+      { key: "b", set: [1, 2], round: 10, preserve: true }, // 보존 → 유지
+      { key: "c", set: [1, 2], round: 11 }, // 현재 회차 → 유지
+      { key: "d", set: [1, 2] }, // 회차 없음 → 유지
+      { key: "e", set: [1, 2], round: 11, enabled: false }, // 꺼짐 → 제외
+    ];
+    expect(effectiveRules(rules, 11).map((r) => r.key)).toEqual(["b", "c", "d"]);
+    expect(effectiveRules(rules).map((r) => r.key)).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("필터 진단", () => {
+  it("규칙별 단독 차단 수가 무차별 대입 결과와 같다", async () => {
+    const candidates = Array.from({ length: 12 }, (_, i) => i + 1);
+    const rules = [{ key: "odd", values: [3] }, { key: "sum", max: 40 }, { key: "ac", min: 6 }];
+    const d = await diagnose({ fixed: [], exclude: [], candidates, rules });
+    // 무차별 대입 참조 구현
+    const expected: Record<string, number> = { odd: 0, sum: 0, ac: 0 };
+    let passed = 0, one = 0, two = 0, total = 0;
+    await forEachCombo({ fixed: [], exclude: [], candidates }, (c) => {
+      total++;
+      const failed = [m.oddCount(c) !== 3 ? "odd" : null, m.sum(c) > 40 ? "sum" : null, m.acValue(c) < 6 ? "ac" : null].filter(Boolean) as string[];
+      if (failed.length === 0) passed++;
+      else if (failed.length === 1) { one++; expected[failed[0]!]!++; }
+      else two++;
+    });
+    expect(d.total).toBe(total);
+    expect(d.passed).toBe(passed);
+    expect(d.failedHistogram).toEqual([passed, one, two]);
+    for (const r of d.rules) expect(r.blockedAlone, r.key).toBe(expected[r.key]);
+    expect(d.failedHistogram.reduce((a, b) => a + b, 0)).toBe(total);
+  });
+  it("모순된 규칙: 통과 0개이고 어느 규칙을 끄면 되살아나는지 알려준다", async () => {
+    const candidates = Array.from({ length: 10 }, (_, i) => i + 1);
+    const d = await diagnose({ fixed: [], exclude: [], candidates, rules: [{ key: "odd", values: [6] }, { key: "sum", max: 100 }] });
+    expect(d.passed).toBe(0);
+    const odd = d.rules.find((r) => r.key === "odd")!;
+    expect(odd.blockedAlone).toBeGreaterThan(0); // odd를 끄면 sum<=100 인 조합이 되살아남
+  });
+});

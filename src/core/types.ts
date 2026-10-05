@@ -25,6 +25,11 @@ export interface FilterRule {
   /** 표현식 필터: 참/거짓. values가 없으면 참(1)만 허용한다. */
   expr?: string;
   label?: string;
+  /** false면 설정은 남기되 계산에서 제외한다 (기본 true) */
+  enabled?: boolean;
+  /** 이 규칙을 만든 목표 회차. preserve가 아니면 더 나중 회차에서는 적용하지 않는다. */
+  round?: number;
+  preserve?: boolean;
 }
 
 export interface GenerateOptions {

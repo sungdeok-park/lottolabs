@@ -216,9 +216,18 @@ export interface CompiledRule {
   def: FilterDef;
 }
 
+/**
+ * 실제로 적용할 규칙만 고른다: 꺼진 규칙(enabled === false)과,
+ * 이전 회차용으로 만든(round < targetRound) 비보존 규칙은 제외한다.
+ */
+export function effectiveRules(rules: readonly FilterRule[], targetRound?: number): FilterRule[] {
+  return rules.filter((r) => r.enabled !== false && !(targetRound !== undefined && r.round !== undefined && !r.preserve && r.round < targetRound));
+}
+
 export function compileRules(rules: readonly FilterRule[]): CompiledRule[] {
   const out: CompiledRule[] = [];
   for (const rule of rules) {
+    if (rule.enabled === false) continue;
     const d = resolveDef(rule);
     if (d) out.push({ rule, def: d });
   }
@@ -235,6 +244,10 @@ export function evaluateCompiled(c: Combo, compiled: readonly CompiledRule[], h?
 }
 
 export function describeRule(rule: FilterRule): string {
+  return (rule.enabled === false ? "(꺼짐) " : "") + describeRuleBody(rule);
+}
+
+function describeRuleBody(rule: FilterRule): string {
   const d = resolveDef(rule);
   const name = rule.label ?? d?.label ?? rule.key;
   if (rule.expr !== undefined) return `${name}: ${rule.expr}`;
