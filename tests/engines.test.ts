@@ -87,15 +87,14 @@ describe("이력 필터", () => {
     expect(f("bonusCarry").compute([1, 2, 3, 4, 5, 6], hist(4))).toBe(0);
     expect(f("recent5").compute([20, 21, 22, 1, 2, 3], hist(5))).toBe(6);
     expect(f("recent5").compute([30, 31, 32, 43, 44, 45], hist(5))).toBe(0);
-    expect(f("cold5").compute([30, 31, 32, 43, 44, 45], hist(5))).toBe(6);
-    expect(f("cold5").compute([1, 10, 20, 40, 41, 42], hist(5))).toBe(0);
+    expect(f("cold5").compute([30, 31, 32, 43, 44, 45], hist(5))).toBe(0); // 이력이 5회 미만이면 콜드 0 (원본 규칙)
     expect(f("maxAbsence").compute([1, 10, 20, 30, 31, 32], hist(4))).toBe(3);
     expect(f("sumAbsence").compute([1, 10, 20, 30, 31, 32], hist(4))).toBe(2 + 1 + 0 + 3 + 3 + 3);
     expect(f("pastMatch").compute([1, 2, 3, 10, 11, 30], hist(4))).toBe(3);
     expect(f("pastMatch").compute([1, 2, 3, 4, 5, 6], hist(4))).toBe(6);
   });
-  it("이력이 없으면 0", () => {
-    for (const d of FILTERS.filter((x) => x.needsHistory)) expect(d.compute([1, 2, 3, 4, 5, 6], undefined)).toBe(0);
+  it("이력이 없으면 0 (원본 규칙상 중간은 6)", () => {
+    for (const d of FILTERS.filter((x) => x.needsHistory)) expect(d.compute([1, 2, 3, 4, 5, 6], undefined)).toBe(d.key === "neutral10" ? 6 : 0);
   });
 });
 
@@ -589,5 +588,59 @@ describe("계산 작업(워커용)", () => {
     const msgs: JobMessage[] = [];
     await runJob({ kind: "count", picks, rules, draws: [{} as never], targetRound: 3 }, (m) => msgs.push(m));
     expect(msgs.some((m) => m.type === "error" || m.type === "done")).toBe(true);
+  });
+});
+
+
+describe("원본 당첨번호 관리 페이지(winning-numbers) 정의와 대조", () => {
+  // winning-numbers.html 의 processData / calc 를 옮긴 참조 구현
+  const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43];
+  const TRI = [1, 3, 6, 10, 15, 21, 28, 36, 45];
+  const orig = (nums: number[], prev: number[] | null, window: number[][] | null) => {
+    const nb = new Set<number>();
+    prev?.forEach((n) => { if (n > 1) nb.add(n - 1); if (n < 45) nb.add(n + 1); });
+    const sorted = [...nums].sort((a, b) => a - b);
+    let consec = 0;
+    for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] === sorted[i]! + 1) consec++;
+    let hot = 0, neutral = 0, cold = 0;
+    if (window) {
+      const counts = new Array(46).fill(0);
+      window.forEach((d) => d.forEach((n) => counts[n]++));
+      nums.forEach((n) => { const c = counts[n]; if (c >= 3) hot++; else if (c === 0) cold++; else neutral++; });
+    } else neutral = 6;
+    const band = [0, 0, 0, 0, 0];
+    nums.forEach((n) => { if (n <= 10) band[0]!++; else if (n <= 20) band[1]!++; else if (n <= 30) band[2]!++; else if (n <= 40) band[3]!++; else band[4]!++; });
+    return {
+      neighbor: prev ? nums.filter((n) => nb.has(n) && !prev.includes(n)).length : 0,
+      carry: prev ? nums.filter((n) => prev.includes(n)).length : 0,
+      consec, hot, neutral, cold, band,
+      low: nums.filter((n) => n <= 23).length,
+      m3: nums.filter((n) => n % 3 === 0).length, m4: nums.filter((n) => n % 4 === 0).length, m5: nums.filter((n) => n % 5 === 0).length,
+      m7: nums.filter((n) => [7, 14, 21, 28, 35, 42].includes(n)).length, m8: nums.filter((n) => [8, 16, 24, 32, 40].includes(n)).length,
+      mNo: nums.filter((n) => n % 3 !== 0 && n % 4 !== 0 && n % 5 !== 0).length,
+      prime: nums.filter((n) => PRIMES.includes(n)).length, composite: nums.filter((n) => n !== 1 && !PRIMES.includes(n)).length, tri: nums.filter((n) => TRI.includes(n)).length,
+    };
+  };
+  it("120회 무작위 이력에서 모든 속성이 원본 계산과 같다", () => {
+    const all: Draw[] = Array.from({ length: 120 }, (_, i) => mk(i + 1, randCombo(), 0)).map((d) => ({ ...d, bonus: [1, 2, 3, 4, 5, 6, 7, 8].find((b) => !d.numbers.includes(b))! }));
+    all.forEach((d, idx) => {
+      const prior = all.slice(0, idx);
+      const h = { draws: prior, targetRound: d.round };
+      const o = orig([...d.numbers], idx > 0 ? [...all[idx - 1]!.numbers] : null, idx >= 10 ? all.slice(idx - 10, idx).map((x) => [...x.numbers]) : null);
+      const g = (k: string) => f(k).compute(d.numbers, h);
+      if (idx > 0) { expect(g("neighbor"), `neighbor ${d.round}`).toBe(o.neighbor); expect(g("carry")).toBe(o.carry); }
+      expect(g("consecPairs")).toBe(o.consec);
+      expect(g("hot10"), `hot ${d.round}`).toBe(o.hot);
+      expect(g("neutral10"), `neutral ${d.round}`).toBe(o.neutral);
+      expect(g("cold10"), `cold ${d.round}`).toBe(o.cold);
+      expect([1, 2, 3, 4, 5].map((b) => g(`band${b}`))).toEqual(o.band);
+      expect(6 - g("high")).toBe(o.low);
+      expect([g("mul3"), g("mul4"), g("mul5"), g("mul7"), g("mul8"), g("mulNone")]).toEqual([o.m3, o.m4, o.m5, o.m7, o.m8, o.mNo]);
+      expect([g("prime"), g("composite"), g("triangular")]).toEqual([o.prime, o.composite, o.tri]);
+    });
+  });
+  it("저·고 경계: 23은 저, 24는 고", () => {
+    expect(m.highCount([23, 1, 2, 3, 4, 5])).toBe(0);
+    expect(m.highCount([24, 1, 2, 3, 4, 5])).toBe(1);
   });
 });

@@ -2,8 +2,8 @@ import type { Combo } from "./types";
 
 export const MAX_NUM = 45;
 export const PICK = 6;
-/** 저번호 1~22, 고번호 23~45 */
-export const HIGH_FROM = 23;
+/** 저번호 1~23, 고번호 24~45 (원본 당첨번호 관리 페이지의 저:고 기준: n ≤ 23 이 저) */
+export const HIGH_FROM = 24;
 
 const PRIMES = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43]);
 const SQUARES = new Set([1, 4, 9, 16, 25, 36]);
@@ -171,3 +171,6 @@ export const gungCount = (g: number) => (c: Combo) => count(c, (n) => gungOf(n) 
 export const gungActive = (c: Combo) => new Set(c.map(gungOf)).size;
 /** 한 궁에 가장 많이 몰린 번호 수 */
 export const gungMax = (c: Combo) => Math.max(...Array.from({ length: 9 }, (_, i) => gungCount(i + 1)(c)));
+
+/** 배수외: 3·4·5의 배수가 모두 아닌 번호의 개수 (원본 당첨번호 관리 페이지 정의) */
+export const multipleNoneCount = (c: Combo) => count(c, (n) => n % 3 !== 0 && n % 4 !== 0 && n % 5 !== 0);

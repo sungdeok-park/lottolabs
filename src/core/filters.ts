@@ -28,6 +28,7 @@ interface Prep {
   absence: number[];
   pastSets: Set<number>[];
   byRound: Map<number, Set<number>>;
+  len: number;
 }
 
 const preps = new WeakMap<HistoryContext, Prep>();
@@ -54,7 +55,7 @@ function prep(h: HistoryContext): Prep {
   };
   const absence = new Array<number>(m.MAX_NUM + 1).fill(draws.length);
   draws.forEach((d, i) => d.numbers.forEach((x) => (absence[x] = draws.length - 1 - i)));
-  p = { last, lastSet, neighborSet, freq, absence, pastSets: draws.map((d) => new Set(d.numbers)), byRound: new Map(draws.map((d) => [d.round, new Set(d.numbers)])) };
+  p = { last, lastSet, neighborSet, freq, absence, pastSets: draws.map((d) => new Set(d.numbers)), byRound: new Map(draws.map((d) => [d.round, new Set(d.numbers)])), len: draws.length };
   preps.set(h, p);
   return p;
 }
@@ -65,7 +66,18 @@ const carryover = withHist((c, p) => c.filter((n) => p.lastSet.has(n)).length);
 const neighbor = withHist((c, p) => c.filter((n) => p.neighborSet.has(n)).length);
 const bonusCarry = withHist((c, p) => (p.last && c.includes(p.last.bonus) ? 1 : 0));
 const appearedIn = (n: number) => withHist((c, p) => c.filter((x) => p.freq(n)[x]! > 0).length);
-const coldIn = (n: number) => withHist((c, p) => c.filter((x) => p.freq(n)[x]! === 0).length);
+/**
+ * 원본 당첨번호 관리 페이지의 핫/중간/콜드: 직전 10회 본번호 출현 횟수가 3 이상이면 핫, 0이면 콜드, 나머지는 중간.
+ * 이력이 10회 미만이면 (핫 0, 중간 6, 콜드 0)으로 본다. 창 크기 N을 바꾼 콜드도 같은 규칙(N회 미만이면 0)을 쓴다.
+ */
+const HOT_AT = 3;
+const hotIn = (n: number) => withHist((c, p) => (p.len < n ? 0 : c.filter((x) => p.freq(n)[x]! >= HOT_AT).length));
+const coldIn = (n: number) => withHist((c, p) => (p.len < n ? 0 : c.filter((x) => p.freq(n)[x]! === 0).length));
+const neutralIn = (n: number) => (c: Combo, h?: HistoryContext) => {
+  if (!h || h.draws.length < n) return 6;
+  const p = prep(h);
+  return c.filter((x) => p.freq(n)[x]! > 0 && p.freq(n)[x]! < HOT_AT).length;
+};
 const maxAbsence = withHist((c, p) => Math.max(...c.map((x) => p.absence[x]!)));
 const sumAbsence = withHist((c, p) => c.reduce((a, x) => a + p.absence[x]!, 0));
 /** 역대 본번호 조합과 가장 많이 겹친 개수 (6이면 과거 1등 조합과 동일) */
@@ -88,7 +100,7 @@ export const FILTERS: FilterDef[] = [
   def("endSum", "끝수합", "기본 분석", "각 수의 일의 자리 합", [2, 52], m.endDigitSum),
   def("ac", "AC", "기본 분석", "두 수 차이의 서로 다른 값 수 − 5 (0~10)", [0, 10], m.acValue),
   def("odd", "홀수 개수", "기본 분석", "홀수의 개수 (짝수는 6−홀수)", [0, 6], m.oddCount),
-  def("high", "고번호 개수", "기본 분석", "23 이상 번호의 개수 (1~22는 저번호)", [0, 6], m.highCount),
+  def("high", "고번호 개수", "기본 분석", "24 이상 번호의 개수 (1~23은 저번호)", [0, 6], m.highCount),
   def("consecPairs", "연속쌍", "기본 분석", "차가 1인 이웃 쌍의 개수 (7,8,9 → 2쌍)", [0, 5], m.consecutivePairs),
   def("longestRun", "연번 길이", "기본 분석", "가장 긴 연속 묶음 길이 (없으면 1)", [1, 6], m.longestRun),
   def("first", "첫 수", "기본 분석", "가장 작은 번호", [1, 40], m.first),
@@ -102,6 +114,7 @@ export const FILTERS: FilterDef[] = [
   def("square", "제곱수 개수", "번호 특성", "1,4,9,16,25,36", [0, 6], m.squareCount),
   def("triangular", "삼각수 개수", "번호 특성", "1,3,6,10,15,21,28,36,45", [0, 6], m.triangularCount),
   def("twin", "쌍둥이수 개수", "번호 특성", "11,22,33,44의 개수", [0, 4], m.twinCount),
+  def("mulNone", "배수외 개수", "번호 특성", "3·4·5의 배수가 모두 아닌 번호의 개수", [0, 6], m.multipleNoneCount),
   ...[3, 4, 5, 6, 7, 8, 9].map((k) => def(`mul${k}`, `${k}의 배수 개수`, "번호 특성", `${k}의 배수(${k}, ${2 * k}, … ${m.multiplesInRange(k) * k})의 개수`, [0, Math.min(6, m.multiplesInRange(k))], m.multipleCount(k))),
 
   def("endDigits", "끝수 종류", "분포", "서로 다른 일의 자리 숫자의 개수", [2, 6], m.distinctEndDigits),
@@ -128,8 +141,10 @@ export const FILTERS: FilterDef[] = [
   def("carry", "이월수", "과거 이력", "직전 회차 본번호와 겹치는 개수", [0, 6], carryover, { needsHistory: true }),
   def("bonusCarry", "보너스 이월", "과거 이력", "직전 회차 보너스 번호 포함 여부 (0/1)", [0, 1], bonusCarry, { needsHistory: true }),
   def("neighbor", "이웃수", "과거 이력", "직전 회차 번호의 ±1 번호 포함 개수", [0, 6], neighbor, { needsHistory: true }),
-  ...[5, 10, 15, 20].map((n) => def(`recent${n}`, `핫 ${n}회 (최근 출현수)`, "과거 이력", `뜨거운수: 최근 ${n}회 본번호에 한 번이라도 나온 번호의 개수`, [0, 6], appearedIn(n), { needsHistory: true })),
-  ...[5, 10, 15, 20].map((n) => def(`cold${n}`, `콜드 ${n}회 (최근 미출현수)`, "과거 이력", `차가운수: 최근 ${n}회 동안 한 번도 안 나온 번호의 개수`, [0, 6], coldIn(n), { needsHistory: true })),
+  ...[5, 10, 15, 20].map((n) => def(`recent${n}`, `최근 ${n}회 출현수`, "과거 이력", `최근 ${n}회 본번호에 한 번이라도 나온 번호의 개수`, [0, 6], appearedIn(n), { needsHistory: true })),
+  def("hot10", "핫 (직전 10회)", "과거 이력", "직전 10회 본번호에 3번 이상 나온 번호의 개수 (원본 기준, 10회 미만 이력이면 0)", [0, 6], hotIn(10), { needsHistory: true }),
+  def("neutral10", "중간 (직전 10회)", "과거 이력", "직전 10회 본번호에 1~2번 나온 번호의 개수 (10회 미만 이력이면 6)", [0, 6], neutralIn(10), { needsHistory: true }),
+  ...[5, 10, 15, 20].map((n) => def(`cold${n}`, `콜드 ${n}회 (최근 미출현수)`, "과거 이력", `최근 ${n}회 동안 한 번도 안 나온 번호의 개수 (${n}회 미만 이력이면 0)`, [0, 6], coldIn(n), { needsHistory: true })),
   def("maxAbsence", "최장 미출현 회차", "과거 이력", "조합 번호 중 마지막 출현 후 가장 오래 지난 회차 수", [0, 3000], maxAbsence, { needsHistory: true }),
   def("sumAbsence", "미출현 회차 합", "과거 이력", "조합 번호들의 미출현 회차 수의 합", [0, 18000], sumAbsence, { needsHistory: true }),
   def("pastMatch", "역대 최대 일치", "과거 이력", "역대 본번호 조합과 가장 많이 겹친 개수 (6이면 과거 1등 조합과 동일)", [0, 6], pastMaxMatch, { needsHistory: true, heavy: true }),
