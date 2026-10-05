@@ -49,6 +49,20 @@ describe("확장 지표", () => {
     expect(f("mul8").domain).toEqual([0, 5]);
     expect(f("mul9").domain).toEqual([0, 5]);
   });
+  it("용지 가로·세로 그룹 (동행복권 용지 7×7, 43~45는 7번째 가로줄)", () => {
+    const c = [1, 8, 15, 22, 29, 36]; // 모두 세로1
+    expect(f("col1").compute(c)).toBe(6);
+    expect(f("col2").compute(c)).toBe(0);
+    expect(f("row1").compute(c)).toBe(1);
+    expect(f("row6").compute(c)).toBe(1);
+    expect(f("row7").compute([43, 44, 45, 1, 2, 3])).toBe(3);
+    expect(f("row1").compute([43, 44, 45, 1, 2, 3])).toBe(3);
+    expect(f("col7").compute([7, 14, 21, 28, 35, 42])).toBe(6);
+    for (let r = 1; r <= 7; r++) expect(f(`row${r}`).compute([r * 7 - 6, 1, 2, 3, 4, 5])).toBeGreaterThanOrEqual(1);
+    const total = (k: string) => [1, 2, 3, 4, 5, 6, 7].reduce((a, i) => a + f(`${k}${i}`).compute([3, 12, 20, 27, 33, 45]), 0);
+    expect(total("row")).toBe(6);
+    expect(total("col")).toBe(6);
+  });
   it("필터 키는 중복되지 않는다", () => {
     expect(new Set(FILTERS.map((x) => x.key)).size).toBe(FILTERS.length);
   });

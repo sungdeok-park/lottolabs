@@ -101,9 +101,16 @@ export const endDigitCount = (d: number) => (c: Combo) => count(c, (n) => n % 10
 /** 번호대별 개수: 1=1~10, 2=11~20, 3=21~30, 4=31~40, 5=41~45 */
 export const bandCount = (b: number) => (c: Combo) => count(c, (n) => Math.ceil(n / 10) === b);
 
-/** 용지(7칸×7줄: 1~7, 8~14, … 43~45)에서 번호가 걸친 행 수 / 열 수 */
-export const ticketRows = (c: Combo) => new Set(c.map((n) => Math.ceil(n / 7))).size;
-export const ticketCols = (c: Combo) => new Set(c.map((n) => ((n - 1) % 7) + 1)).size;
+/**
+ * 용지(7칸×7줄): 가로 1줄=1~7, 2줄=8~14, … 6줄=36~42, 7줄=43~45. 세로 1칸=1,8,15,…,43 … 7칸=7,14,…,42.
+ */
+export const ticketRow = (n: number) => Math.ceil(n / 7);
+export const ticketCol = (n: number) => ((n - 1) % 7) + 1;
+export const ticketRows = (c: Combo) => new Set(c.map(ticketRow)).size;
+export const ticketCols = (c: Combo) => new Set(c.map(ticketCol)).size;
+/** 가로 r줄에 놓인 번호 개수 / 세로 k칸에 놓인 번호 개수 */
+export const rowCount = (r: number) => (c: Combo) => count(c, (n) => ticketRow(n) === r);
+export const colCount = (k: number) => (c: Combo) => count(c, (n) => ticketCol(n) === k);
 
 /** k의 배수 개수 (k = 3~9) */
 export const multipleCount = (k: number) => (c: Combo) => count(c, (n) => n % k === 0);

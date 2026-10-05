@@ -2,7 +2,7 @@ import { ExprError, collectVars, evalExpr, parseExpr } from "./expr";
 import type { Combo, Draw, FilterRule, HistoryContext } from "./types";
 import * as m from "./metrics";
 
-export type FilterGroup = "기본 분석" | "번호 특성" | "분포" | "과거 이력" | "내 필터";
+export type FilterGroup = "기본 분석" | "번호 특성" | "분포" | "용지" | "과거 이력" | "내 필터";
 
 export interface FilterDef {
   key: string;
@@ -108,8 +108,10 @@ export const FILTERS: FilterDef[] = [
   ...Array.from({ length: 10 }, (_, d) => def(`end${d}`, `끝수 ${d} 개수`, "분포", `일의 자리가 ${d}인 번호의 개수`, [0, d >= 1 && d <= 5 ? 5 : 4], m.endDigitCount(d))),
   def("bands", "사용 번호대", "분포", "1~10,11~20,21~30,31~40,41~45 중 번호가 있는 구간 수", [1, 5], m.bandsUsed),
   ...[1, 2, 3, 4, 5].map((b) => def(`band${b}`, `${BAND_LABEL[b]}번대 개수`, "분포", `${BAND_LABEL[b]} 구간 번호의 개수`, [0, b === 5 ? 5 : 6], m.bandCount(b))),
-  def("ticketRows", "용지 사용 줄 수", "분포", "용지(7칸×7줄: 1~7, 8~14, …, 43~45)에서 번호가 놓인 줄 수", [1, 6], m.ticketRows),
-  def("ticketCols", "용지 사용 칸 수", "분포", "용지(7칸×7줄)에서 번호가 놓인 세로 칸(1~7열) 수", [1, 6], m.ticketCols),
+  def("ticketRows", "용지 사용 가로줄 수", "용지", "번호가 놓인 서로 다른 가로줄(1~7)의 수", [1, 6], m.ticketRows),
+  def("ticketCols", "용지 사용 세로줄 수", "용지", "번호가 놓인 서로 다른 세로줄(1~7)의 수", [1, 6], m.ticketCols),
+  ...[1, 2, 3, 4, 5, 6, 7].map((r) => def(`row${r}`, `가로${r} 개수`, "용지", `용지 가로 ${r}줄(${(r - 1) * 7 + 1}~${Math.min(r * 7, 45)})에 놓인 번호의 개수`, [0, r === 7 ? 3 : 6], m.rowCount(r))),
+  ...[1, 2, 3, 4, 5, 6, 7].map((k) => def(`col${k}`, `세로${k} 개수`, "용지", `용지 세로 ${k}줄(${Array.from({ length: k <= 3 ? 7 : 6 }, (_, i) => k + i * 7).join(",")})에 놓인 번호의 개수`, [0, 6], m.colCount(k))),
 
   def("carry", "이월수", "과거 이력", "직전 회차 본번호와 겹치는 개수", [0, 6], carryover, { needsHistory: true }),
   def("bonusCarry", "보너스 이월", "과거 이력", "직전 회차 보너스 번호 포함 여부 (0/1)", [0, 1], bonusCarry, { needsHistory: true }),
