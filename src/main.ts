@@ -1,15 +1,17 @@
-import { init, loadDraws } from "./state";
+import { init, loadDraws, loadOperator } from "./state";
 import { clear, h } from "./ui/dom";
 import { notice } from "./ui/common";
 import { renderGenerate } from "./ui/generate";
 import { renderVault } from "./ui/vault";
 import { renderGuide, renderHome, renderShare } from "./ui/pages";
 import { renderStats, renderWheel } from "./ui/tools";
+import { renderExclusions } from "./ui/exclusions";
 import { persistent } from "./storage";
 
 const ROUTES = [
   ["#/", "홈"],
   ["#/generate", "조합 만들기"],
+  ["#/exclusions", "제외수"],
   ["#/wheel", "휠링"],
   ["#/stats", "통계"],
   ["#/vault", "조합번호"],
@@ -27,6 +29,7 @@ function render() {
   if (!persistent) main.append(notice("warn", "이 브라우저에서는 저장소를 사용할 수 없어 새로고침하면 데이터가 사라집니다. 시크릿 모드이거나 저장소가 차단된 상태일 수 있습니다."));
   if (hash.startsWith("#/share/")) renderShare(main, hash.slice("#/share/".length));
   else if (hash === "#/generate" || hash === "#/filters") renderGenerate(main);
+  else if (hash === "#/exclusions") renderExclusions(main);
   else if (hash === "#/wheel") renderWheel(main);
   else if (hash === "#/stats") renderStats(main);
   else if (hash === "#/vault") renderVault(main);
@@ -62,7 +65,7 @@ function initTheme() {
 async function boot() {
   initTheme();
   await init();
-  await loadDraws(import.meta.env.BASE_URL);
+  await Promise.all([loadDraws(import.meta.env.BASE_URL), loadOperator(import.meta.env.BASE_URL)]);
   window.addEventListener("hashchange", render);
   render();
 }

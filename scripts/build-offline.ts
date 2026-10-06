@@ -32,9 +32,10 @@ let js = "";
 html = html.replace(/<script type="module"[^>]*src="(\.\/assets\/[^"]+\.js)"[^>]*><\/script>/g, (_m, p) => { js += read(p) + "\n"; return ""; });
 if (!css.length || !js) throw new Error("빌드 결과에서 스타일 또는 스크립트를 찾지 못했습니다.");
 const draws = readFileSync(new URL("../public/data/draws.json", import.meta.url), "utf8");
+const operator = { exclusions: JSON.parse(readFileSync(new URL("../public/data/exclusions.json", import.meta.url), "utf8")), recommended: JSON.parse(readFileSync(new URL("../public/data/operator-filters.json", import.meta.url), "utf8")) };
 const safe = (s: string) => s.replace(/<\/(script|style)/gi, "<\\/$1");
 html = html.replace("</head>", `<style>${safe(css.join("\n"))}</style>\n</head>`);
-html = html.replace("</body>", `<script>window.__DRAWS__=${safe(JSON.stringify(JSON.parse(draws)))};</script>\n<script>${safe(js)}</script>\n</body>`);
+html = html.replace("</body>", `<script>window.__DRAWS__=${safe(JSON.stringify(JSON.parse(draws)))};window.__OPERATOR__=${safe(JSON.stringify(operator))};</script>\n<script>${safe(js)}</script>\n</body>`);
 // 단일 파일에서는 해설 페이지가 없으므로 상대 링크를 숨기지 않고 그대로 두되, 앱 안 링크(#/…)만 동작한다.
 mkdirSync(out, { recursive: true });
 writeFileSync(new URL("lotto-workroom.html", out), html);

@@ -1,0 +1,52 @@
+{
+ "schemaVersion": 1,
+ "updatedAt": "2026-10-06T15:24:04.702Z",
+ "filters": [
+  {
+   "id": "central90-v1",
+   "name": "과거 흐름 범위",
+   "description": "과거 1244회 당첨번호에서 총합·끝수합·AC·홀수 개수·고번호 개수·연속쌍 각각이 가운데 90%(양쪽 5%씩 제외)에 드는 범위입니다. 과거 분포를 요약한 것이며 당첨 확률을 높이지 않습니다.",
+   "methodVersion": "central90-v1",
+   "publishedAt": "2026-10-06T15:24:04.702Z",
+   "revision": 1,
+   "rules": [
+    {
+     "key": "sum",
+     "min": 88,
+     "max": 189
+    },
+    {
+     "key": "endSum",
+     "min": 15,
+     "max": 37
+    },
+    {
+     "key": "ac",
+     "min": 5,
+     "max": 10
+    },
+    {
+     "key": "odd",
+     "min": 1,
+     "max": 5
+    },
+    {
+     "key": "high",
+     "min": 1,
+     "max": 5
+    },
+    {
+     "key": "consecPairs",
+     "min": 0,
+     "max": 2
+    }
+   ],
+   "stats": {
+    "basedOnRounds": 1244,
+    "historicalPass": 967,
+    "spaceRemaining": 6565541,
+    "spaceTotal": 8145060
+   }
+  }
+ ]
+}

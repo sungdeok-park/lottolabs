@@ -45,7 +45,7 @@ function shortSummary(r: FilterRule | undefined): string {
   return parts.join(" ") || "전체";
 }
 
-type Sel = { kind: "board" } | { kind: "round" } | { kind: "presets" } | { kind: "regress" } | { kind: "custom" } | { kind: "filter"; key: string };
+type Sel = { kind: "operator"; id: string } | { kind: "board" } | { kind: "round" } | { kind: "presets" } | { kind: "regress" } | { kind: "custom" } | { kind: "filter"; key: string };
 type Mode = "fixed" | "exclude" | "candidates";
 
 export function renderGenerate(root: HTMLElement) {
@@ -161,6 +161,11 @@ export function renderGenerate(root: HTMLElement) {
         det.addEventListener("toggle", () => { if (det.open) openGroups.add(g); else openGroups.delete(g); });
         rail.append(det);
       }
+      const recs = state.operator.recommended?.filters ?? [];
+      rail.append(h("h3", { class: "group" }, h("span", {}, "운영자 추천"), h("span", { class: "num" }, String(recs.length))));
+      rail.append(recs.length
+        ? h("ul", { class: "rows" }, ...recs.map((r) => { const applied = r.rules.every((x) => state.rules.some((y) => y.source === r.id && y.key === x.key && y.enabled !== false)); return frow("op-" + r.id, r.name, applied ? "적용됨" : "", applied, sel.kind === "operator" && sel.id === r.id, () => select({ kind: "operator", id: r.id })); }))
+        : h("p", { class: "muted", style: "padding:6px 16px 6px 0" }, "게시된 추천 필터가 없습니다."));
       rail.append(h("h3", { class: "group" }, "직접 만들기"), h("ul", { class: "rows" },
         frow("regress", "회귀 1~200", regOn ? `${regOn}개 켜짐` : "", regOn > 0, cur("regress"), () => select({ kind: "regress" })),
         frow("custom", "내 필터 (번호 집합·표현식)", customOn.length ? `${customOn.length}개` : "", customOn.length > 0, cur("custom"), () => select({ kind: "custom" })),
@@ -186,6 +191,7 @@ export function renderGenerate(root: HTMLElement) {
     if (sel.kind === "board") editBoard();
     else if (sel.kind === "round") editRound();
     else if (sel.kind === "presets") editPresets();
+    else if (sel.kind === "operator") editOperator(sel.id);
     else if (sel.kind === "regress") editRegress();
     else if (sel.kind === "custom") editCustom();
     else editFilter(FILTER_BY_KEY.get(sel.key)!);
@@ -343,6 +349,33 @@ export function renderGenerate(root: HTMLElement) {
           h("button", { type: "button", class: "btn sm danger", onclick: () => { state.presets.splice(i, 1); commit(); drawEdit(); } }, "삭제")))));
     }
     edit.append(h("section", {}, h("h3", {}, `저장된 프리셋 ${state.presets.length}개`), state.presets.length ? list : h("p", { class: "muted" }, "저장된 프리셋이 없습니다.")));
+  }
+
+  /* ---- 운영자 추천 필터 ---- */
+  function editOperator(id: string) {
+    const rec = state.operator.recommended?.filters.find((r) => r.id === id);
+    if (!rec) { edit.append(head("운영자 추천", ""), notice("info", "게시된 추천 필터가 없습니다.")); return; }
+    const mine = () => state.rules.filter((r) => r.source === rec.id);
+    const applied = rec.rules.every((x) => mine().some((y) => y.key === x.key && y.enabled !== false));
+    const st = rec.stats;
+    edit.append(head(rec.name, rec.description, sw(applied, `${rec.name} 적용`, (v) => {
+      if (v) for (const r of rec.rules) { const cur = getRule(r.key); if (cur) { delete cur.values; } setRule(r.key, { enabled: true, min: r.min, max: r.max, source: rec.id }); }
+      else for (const r of mine()) r.enabled = false;
+      commit(); drawEdit();
+    })));
+    edit.append(h("section", {}, h("h3", {}, "근거"),
+      h("dl", { class: "kv" },
+        h("dt", {}, "과거 통과"), h("dd", {}, h("strong", { class: "num" }, `${st.historicalPass} / ${st.basedOnRounds}회`), h("span", { class: "muted" }, ` (${((st.historicalPass / st.basedOnRounds) * 100).toFixed(1)}%)`)),
+        h("dt", {}, "전체 조합 통과"), h("dd", {}, h("strong", { class: "num" }, `${fmt(st.spaceRemaining)} / ${fmt(st.spaceTotal)}개`), h("span", { class: "muted" }, ` (${((st.spaceRemaining / st.spaceTotal) * 100).toFixed(1)}%)`)),
+        h("dt", {}, "게시"), h("dd", {}, `revision ${rec.revision} · 방법 ${rec.methodVersion} · ${new Date(rec.publishedAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}`)),
+      notice("info", st.historicalPass / st.basedOnRounds < st.spaceRemaining / st.spaceTotal + 0.05 ? "과거 당첨번호의 통과율이 아무 조합이나 고를 때의 통과율과 비슷합니다. 이 범위는 극단적인 조합만 덜어낼 뿐, 당첨번호가 이 범위에 더 잘 들어온다는 근거는 아닙니다." : "과거 통과율이 전체 조합 통과율보다 높습니다. 그래도 이는 과거 분포의 요약이며 앞으로의 당첨 확률을 높이지 않습니다.")));
+    const tb = h("tbody");
+    for (const r of rec.rules) {
+      const cur = state.rules.find((y) => y.source === rec.id && y.key === r.key);
+      tb.append(h("tr", {}, h("td", {}, h("a", { href: "#/generate", onclick: (e: Event) => { e.preventDefault(); select({ kind: "filter", key: r.key }); } }, FILTER_BY_KEY.get(r.key)?.label ?? r.key)), h("td", { class: "n" }, `${r.min ?? "~"} – ${r.max ?? "~"}`), h("td", { class: "n" }, cur && cur.enabled !== false ? (cur.min !== r.min || cur.max !== r.max ? `${cur.min ?? "~"} – ${cur.max ?? "~"} (수정됨)` : "적용 중") : "—")));
+    }
+    edit.append(h("section", {}, h("h3", {}, `포함된 필터 ${rec.rules.length}개`), h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "필터"), h("th", { class: "n" }, "추천 범위"), h("th", { class: "n" }, "내 설정"))), tb)),
+      h("p", { class: "muted" }, "적용하면 같은 이름의 필터 설정을 이 범위로 덮어씁니다. 적용한 뒤에도 각 필터를 따로 고칠 수 있습니다.")));
   }
 
   /* ---- 회귀 ---- */

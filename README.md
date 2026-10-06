@@ -14,6 +14,12 @@ npm test           # 계산 엔진 시험 (전체 8,145,060 열거 포함)
 npm run build      # 타입 검사 + 정적 빌드(dist/)
 ```
 
+## 운영자 제외수·추천 필터
+
+- **제외수 메뉴(`#/exclusions`)**: 운영자가 추첨 전에 게시한 제외수를 보여 주고, 확인 후 내 제외수에 적용한다. 게시본이 없으면 "미등록"이며 임의 번호는 만들지 않는다. 지난 회차 검증은 **추첨일 00:00(한국 시간) 이전에 게시한 기록만**, 회차마다 그 시점의 마지막 revision을 평가하고 사후 수정본은 제외한다(같은 개수를 무작위로 골랐을 때의 기대치와 함께 표시).
+- 게시/수정/철회: `node scripts/publish-exclusion.mjs publish --round 1245 --numbers 3,8,14 --method v1 --desc "설명"`, `... withdraw --round 1245`. 같은 회차를 다시 게시하면 revision이 늘고 이전 기록은 이력으로 남는다. 철회하면 그 회차는 다시 미등록이 된다. 데이터는 `public/data/exclusions.json`(검증 실패 시 앱은 미등록으로 처리).
+- **운영자 추천 필터**: `public/data/operator-filters.json`. 조합 만들기 목록의 "운영자 추천"에서 적용/해제한다. 현재 1개(`central90-v1` 과거 흐름 범위: 과거 1244회의 가운데 90% 범위, `npx tsx scripts/make-recommended.ts`로 재생성). 근거 수치(과거 통과율 77.7% vs 전체 조합 통과율 80.6%)를 함께 보여 준다.
+
 ## 해설·정책 페이지 (애드센스 승인용 콘텐츠)
 
 `npm run build`가 `content/pages.ts`에서 정적 HTML 98개를 `public/` 아래에 만든다(생성물은 git에 넣지 않음).

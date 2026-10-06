@@ -30,6 +30,8 @@ export interface FilterRule {
   /** 이 규칙을 만든 목표 회차. preserve가 아니면 더 나중 회차에서는 적용하지 않는다. */
   round?: number;
   preserve?: boolean;
+  /** 운영자 추천 필터에서 적용한 규칙이면 그 필터의 id */
+  source?: string;
 }
 
 export interface GenerateOptions {

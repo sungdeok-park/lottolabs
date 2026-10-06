@@ -1,11 +1,19 @@
 import { decodeShare } from "../core/share";
 import { FILTERS } from "../core/filters";
 import { matchDraw } from "../core/match";
+import { currentExclusion } from "../core/operator";
 import { persist, state } from "../state";
 import { balls, DISCLAIMER, fmtDate, notice, uid } from "./common";
 import { h } from "./dom";
 
 const sect = (title: string, ...kids: (Node | string)[]) => h("section", { class: "sect" }, h("h3", {}, title), ...kids);
+
+function exclusionSummary(): Node {
+  const round = state.targetRound > 0 ? state.targetRound : (state.draws.draws.at(-1)?.round ?? 0) + 1;
+  const cur = currentExclusion(state.operator.exclusions?.entries ?? [], round);
+  if (!cur) return notice("info", `제${round}회 제외수는 미등록입니다.`);
+  return h("div", {}, h("p", {}, h("strong", {}, `제${round}회 ${cur.numbers.length}개 제외`), h("span", { class: "muted" }, `  revision ${cur.revision}`)), balls(cur.numbers));
+}
 
 export function renderHome(root: HTMLElement) {
   const ds = state.draws;
@@ -45,7 +53,7 @@ export function renderHome(root: HTMLElement) {
   right.append(
     sect("내 필터", h("p", {}, on.length ? `켜진 필터 ${on.length}개` : "켜진 필터 없음 (제한 없음)"), h("p", {}, h("a", { class: "btn", href: "#/generate" }, "조합 만들기 →"))),
     sect("내 조합", state.batches.length ? h("ul", { class: "rows" }, ...state.batches.slice(0, 4).map((b) => h("li", { style: "padding:8px 0" }, h("span", { class: "num" }, `${b.round}회`), h("span", { class: "muted" }, `  ${b.combos.length}개 · ${fmtDate(b.createdAt)}`)))) : h("p", { class: "muted" }, "저장된 조합이 없습니다."), h("p", {}, h("a", { href: "#/vault" }, "보관함 열기 →"))),
-    sect("운영자 제외수", notice("info", "미등록. 아직 발표된 제외수가 없습니다.")),
+    sect("운영자 제외수", exclusionSummary(), h("p", {}, h("a", { href: "#/exclusions" }, "제외수 메뉴 →"))),
   );
   root.append(h("div", { class: "page-head" }, h("h2", {}, "홈"), h("p", { class: "muted" }, DISCLAIMER)), h("div", { class: "home-grid" }, left, right));
 }
