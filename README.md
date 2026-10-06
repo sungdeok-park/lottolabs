@@ -12,6 +12,14 @@ npm test           # 계산 엔진 시험 (전체 8,145,060 열거 포함)
 npm run build      # 타입 검사 + 정적 빌드(dist/)
 ```
 
+## 해설·정책 페이지 (애드센스 승인용 콘텐츠)
+
+`npm run build`가 `content/pages.ts`에서 정적 HTML 98개를 `public/` 아래에 만든다(생성물은 git에 넣지 않음).
+필터 92종 해설(정의·예시·**전체 8,145,060 조합 분포표**), 회귀 해설, 당첨 확률 계산, 소개, 개인정보처리방침, 문의, robots.txt.
+분포표는 `content/distributions.json`(전체 열거 결과, 약 2분 걸리는 `npm run compute:distributions`로 생성, 필터 정의를 바꾸면 다시 실행)에서 읽는다.
+과거 이력에 의존하는 필터 페이지는 내용이 얇으므로 `noindex`. `SITE_URL=https://도메인 npm run build`로 sitemap.xml도 만든다.
+운영자 정보·문의용 이메일은 아직 없다(문의는 GitHub 이슈로 연결). 출시 전에 소개·문의 페이지에 실제 정보를 채워야 한다.
+
 ## 당첨 이력 데이터
 
 `public/data/draws.json`은 **비어 있다**(실제 데이터를 임의로 만들지 않음). 검증된 출처의 CSV를 준비해 넣는다.

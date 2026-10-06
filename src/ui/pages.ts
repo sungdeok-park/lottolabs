@@ -73,6 +73,7 @@ export function renderGuide(root: HTMLElement) {
       h("li", {}, "등수: 6개=1등, 5개+보너스=2등, 5개=3등, 4개=4등, 3개=5등 (보너스는 본번호 일치에 더하지 않음)"),
       h("li", {}, "이 서비스의 정의는 다른 사이트와 다를 수 있습니다. 필터 정의는 위 목록이 기준입니다."))),
     ...groups.map((g) => h("section", {}, h("h3", {}, g), h("ul", {}, ...FILTERS.filter((f) => f.group === g).map((f) => h("li", {}, h("strong", {}, f.label), ` — ${f.description}`))))),
+    h("section", {}, h("h3", {}, "더 알아보기"), h("p", {}, h("a", { href: "/filters/" }, "필터별 상세 해설과 전체 조합 분포"), " · ", h("a", { href: "/probability/" }, "등수별 당첨 확률 계산"))),
     h("section", {}, h("h3", {}, "저장 안내"), h("p", {}, "번호는 이 브라우저의 IndexedDB에 저장됩니다. 계정이나 서버 백업이 없으므로 JSON 백업을 받아 두세요.")),
   );
 }
