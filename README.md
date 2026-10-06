@@ -5,6 +5,8 @@
 
 ## 실행
 
+서버 없이 화면만 보려면: `npm run build:offline` → `dist-offline/lotto-workroom.html`을 더블클릭(스크립트·스타일·당첨 이력이 파일 하나에 들어 있음. 계산은 메인 스레드, 해설 페이지는 포함 안 됨).
+
 ```
 npm install
 npm run dev        # 개발 서버
