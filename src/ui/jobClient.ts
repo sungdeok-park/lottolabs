@@ -21,7 +21,7 @@ export function startJob<K extends JobRequest["kind"]>(req: JobRequest & { kind:
     else { cleanup(); done(null); console.error("[job]", m.message); }
   };
 
-  if (typeof Worker !== "undefined") {
+  if (typeof Worker !== "undefined" && import.meta.env.VITE_NO_WORKER !== "1") {
     try {
       const w = new Worker(new URL("../core/worker.ts", import.meta.url), { type: "module" });
       const cleanup = () => w.terminate();

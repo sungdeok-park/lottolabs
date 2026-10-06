@@ -22,7 +22,7 @@ npm run build      # 타입 검사 + 정적 빌드(dist/)
 
 ## 당첨 이력 데이터
 
-`public/data/draws.json`은 **비어 있다**(실제 데이터를 임의로 만들지 않음). 검증된 출처의 CSV를 준비해 넣는다.
+`public/data/draws.json`에는 사용자가 제공한 엑셀(당첨번호 관리 내보내기, 2026-10-06)에서 변환한 **1~1244회**(2002-12-07 ~ 2026-10-03)가 들어 있다. 새 회차는 같은 방식으로 CSV를 준비해 덮어쓰거나 `fetch-draws.mjs`로 이어 붙인다.
 
 ```
 node scripts/import-draws.mjs draws.csv "출처 설명"   # 열: round,date,n1..n6,bonus

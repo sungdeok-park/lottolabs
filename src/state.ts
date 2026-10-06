@@ -69,11 +69,20 @@ export async function persist(): Promise<boolean> {
   return state.lastSaveOk;
 }
 
+declare global {
+  interface Window { __DRAWS__?: unknown }
+}
+
 export async function loadDraws(baseUrl: string) {
   try {
-    const res = await fetch(`${baseUrl}data/draws.json`, { cache: "no-cache" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
+    // 단일 파일 빌드(더블클릭으로 여는 버전)는 당첨 이력을 파일 안에 넣어 둔다.
+    let json: any;
+    if (window.__DRAWS__ !== undefined) json = window.__DRAWS__;
+    else {
+      const res = await fetch(`${baseUrl}data/draws.json`, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      json = await res.json();
+    }
     const report = validateDrawFile(json);
     if (!report.ok) throw new Error(`당첨 이력 검증 실패: ${report.errors[0]}`);
     state.draws = json.draws.length
