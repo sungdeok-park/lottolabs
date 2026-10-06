@@ -5,17 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="내 필터로 로또 6/45 조합을 만들고, 저장·공유하고, 추첨 결과까지 확인하는 도구. 당첨을 예측하거나 보장하지 않습니다." />
     <title>로또 워크룸</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231e4fd8%27/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%23c0245e%27/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
     <a class="skip" href="#main">본문으로 건너뛰기</a>
-    <header>
-      <h1><a href="#/">로또 워크룸</a></h1>
-      <nav id="nav" aria-label="주 메뉴"></nav>
+    <header class="top">
+      <div class="top-in">
+        <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true"></span>로또 워크룸</a>
+        <nav id="nav" class="nav" aria-label="주 메뉴"></nav>
+        <button id="theme" class="icon-btn" type="button" aria-label="테마 전환" title="테마 전환">◐</button>
+      </div>
     </header>
     <main id="main" tabindex="-1"></main>
-    <footer>
+    <footer class="foot">
       <p><a href="/filters/">필터 해설</a> · <a href="/probability/">당첨 확률</a> · <a href="/about/">소개</a> · <a href="/privacy/">개인정보처리방침</a> · <a href="/contact/">문의</a></p>
       <p>조건 기반 조합 도구이며 당첨을 예측하거나 보장하지 않습니다. 과도한 구매는 삼가세요. 이 서비스는 복권 판매처가 아닙니다.</p>
     </footer>

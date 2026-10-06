@@ -2,7 +2,7 @@ import { h } from "./dom";
 import type { Combo } from "../core/types";
 import { sortCombo } from "../core/metrics";
 
-export function balls(c: Combo, hit?: { numbers: readonly number[]; bonus: number }) {
+export function balls(c: Combo, hit?: { numbers: readonly number[]; bonus: number }, size?: "lg") {
   const wrap = h("span", { class: "balls" });
   for (const n of sortCombo(c)) {
     const isHit = hit?.numbers.includes(n);
@@ -11,7 +11,7 @@ export function balls(c: Combo, hit?: { numbers: readonly number[]; bonus: numbe
       h(
         "span",
         {
-          class: `ball b${Math.ceil(n / 10)}${isHit ? " hit" : ""}${isBonus ? " bonus" : ""}`,
+          class: `ball b${Math.ceil(n / 10)}${isHit ? " hit" : ""}${isBonus ? " bonus" : ""}${size ? " " + size : ""}`,
           title: isHit ? "본번호 일치" : isBonus ? "보너스 일치" : undefined,
         },
         String(n).padStart(2, "0"),
@@ -23,8 +23,8 @@ export function balls(c: Combo, hit?: { numbers: readonly number[]; bonus: numbe
 }
 
 export function notice(kind: "info" | "warn" | "error" | "ok", ...kids: (Node | string)[]) {
-  const icon = { info: "ℹ", warn: "⚠", error: "✕", ok: "✓" }[kind];
-  return h("div", { class: `notice ${kind}`, role: kind === "error" ? "alert" : "status" }, h("span", { "aria-hidden": "true" }, icon + " "), ...kids);
+  const icon = { info: "i", warn: "!", error: "×", ok: "✓" }[kind];
+  return h("div", { class: `notice ${kind}`, role: kind === "error" ? "alert" : "status" }, h("span", { class: "ic", "aria-hidden": "true" }, icon), h("div", {}, ...kids));
 }
 
 export const DISCLAIMER = "필터는 번호를 줄여 줄 뿐, 한 조합의 당첨 확률을 높이지 않습니다. 이 도구는 당첨을 보장하거나 예측하지 않습니다.";

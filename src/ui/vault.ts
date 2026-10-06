@@ -69,29 +69,27 @@ export function renderVault(root: HTMLElement) {
     } else {
       el.append(notice("info", state.draws.state === "ok" ? `제${b.round}회 결과 대기 중입니다.` : "당첨 이력 데이터가 없어 대조할 수 없습니다."));
     }
-    const t = h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "선택"), h("th", {}, "번호"), h("th", {}, "결과"))));
-    const tb = h("tbody");
+    const rowsEl = h("div", {});
     b.combos.forEach((c, i) => {
       const key = `${b.id}:${i}`;
       const m = d ? matchDraw(c.numbers, d) : null;
-      tb.append(h("tr", {},
-        h("td", {}, h("input", { type: "checkbox", "aria-label": `${i + 1}번 조합 선택`, checked: selected.has(key), onchange: (e: Event) => ((e.target as HTMLInputElement).checked ? selected.add(key) : selected.delete(key)) })),
-        h("td", {}, balls(c.numbers, d)),
-        h("td", {}, m ? `${m.matched}개 일치${m.bonus ? " + 보너스" : ""}${m.rank ? ` → ${m.rank}등` : ""}` : "—")));
+      rowsEl.append(h("div", { class: "combo-row" },
+        h("input", { type: "checkbox", "aria-label": `${i + 1}번 조합 선택`, checked: selected.has(key), onchange: (e: Event) => ((e.target as HTMLInputElement).checked ? selected.add(key) : selected.delete(key)) }),
+        balls(c.numbers, d),
+        h("span", { class: "r" }, m ? `${m.matched}개 일치${m.bonus ? " + 보너스" : ""}${m.rank ? ` → ${m.rank}등` : ""}` : "—")));
     });
-    t.append(tb);
     const body = (combos = pick(b)) => combos.map((c, i) => `${"ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i] ?? i + 1} ${formatCombo(c.numbers)}`).join("\n");
     el.append(
-      h("div", { class: "scroll" }, t),
-      h("div", { class: "row" },
-        h("button", { type: "button", onclick: async () => say((await copyText(shareText(b.round, pick(b).map((c) => c.numbers), location.origin + location.pathname))) ? "ok" : "error", "복사했습니다.") }, "복사"),
-        h("button", { type: "button", onclick: () => void osShare(b) }, "다른 앱으로 공유"),
-        h("button", { type: "button", title: "카카오 SDK 키·도메인 등록 전에는 일반 공유로 대체됩니다", onclick: () => { say("warn", "카카오톡 전용 공유는 Kakao Developers 앱 등록 후 사용할 수 있습니다. 일반 공유로 이어집니다."); void osShare(b); } }, "카카오톡"),
-        h("a", { class: "btn", href: mailtoLink(`[${SERVICE}] 제${b.round}회 조합`, `${body()}\n\n조건 기반 생성 번호이며 당첨을 보장하지 않습니다.`) , onclick: () => say("info", "메일 작성 화면을 열었습니다. 전송은 메일 앱에서 직접 해야 합니다. 열리지 않으면 복사 또는 파일 다운로드를 이용하세요.") }, "메일 앱으로 보내기"),
-        h("button", { type: "button", onclick: () => download(`lotto-${b.round}.csv`, csv(b), "text/csv") }, "CSV"),
-        h("button", { type: "button", onclick: () => download(`lotto-${b.round}.txt`, body(b.combos), "text/plain") }, "TXT"),
-        h("button", { type: "button", onclick: () => { void persist(); download(`lotto-${b.round}.json`, JSON.stringify(b, null, 2), "application/json"); } }, "JSON"),
-        h("button", { type: "button", class: "danger", onclick: async () => {
+      rowsEl,
+      h("div", { class: "toolbar" },
+        h("button", { type: "button", class: "btn sm", onclick: async () => say((await copyText(shareText(b.round, pick(b).map((c) => c.numbers), location.origin + location.pathname))) ? "ok" : "error", "복사했습니다.") }, "복사"),
+        h("button", { type: "button", class: "btn sm", onclick: () => void osShare(b) }, "다른 앱으로 공유"),
+        h("button", { type: "button", class: "btn sm", title: "카카오 SDK 키·도메인 등록 전에는 일반 공유로 대체됩니다", onclick: () => { say("warn", "카카오톡 전용 공유는 Kakao Developers 앱 등록 후 사용할 수 있습니다. 일반 공유로 이어집니다."); void osShare(b); } }, "카카오톡"),
+        h("a", { class: "btn sm", href: mailtoLink(`[${SERVICE}] 제${b.round}회 조합`, `${body()}\n\n조건 기반 생성 번호이며 당첨을 보장하지 않습니다.`) , onclick: () => say("info", "메일 작성 화면을 열었습니다. 전송은 메일 앱에서 직접 해야 합니다. 열리지 않으면 복사 또는 파일 다운로드를 이용하세요.") }, "메일 앱으로 보내기"),
+        h("button", { type: "button", class: "btn sm", onclick: () => download(`lotto-${b.round}.csv`, csv(b), "text/csv") }, "CSV"),
+        h("button", { type: "button", class: "btn sm", onclick: () => download(`lotto-${b.round}.txt`, body(b.combos), "text/plain") }, "TXT"),
+        h("button", { type: "button", class: "btn sm", onclick: () => { void persist(); download(`lotto-${b.round}.json`, JSON.stringify(b, null, 2), "application/json"); } }, "JSON"),
+        h("button", { type: "button", class: "btn sm danger", onclick: async () => {
           if (!confirm(`'${b.name}' 묶음(${b.combos.length}개)을 삭제할까요? 삭제 전에 JSON 백업을 권장합니다.`)) return;
           state.batches = state.batches.filter((x) => x.id !== b.id);
           await persist();
@@ -152,13 +150,13 @@ export function renderVault(root: HTMLElement) {
   } });
 
   root.append(
-    h("h2", {}, "조합번호 보관함"),
+    h("div", { class: "page-head" }, h("h2", {}, "조합번호 보관함")),
     notice("info", "이 기기의 브라우저에만 저장됩니다. 서버 백업이 아니며 브라우저 데이터를 지우면 사라집니다. 정기적으로 JSON 백업을 받아 두세요."),
     status,
     list,
-    h("section", {}, h("h3", {}, "가져오기"), h("div", { class: "row" }, h("label", { for: "imp-round" }, "대상 회차"), roundIn), csvIn, h("button", { type: "button", onclick: importText }, "미리 확인 후 가져오기")),
-    h("section", {}, h("h3", {}, "백업·복원"), h("div", { class: "row" },
-      h("button", { type: "button", onclick: () => download(`lotto-workroom-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: "lotto-workroom", version: 1, exportedAt: new Date().toISOString(), batches: state.batches, presets: state.presets }, null, 2), "application/json") }, "전체 백업(JSON) 받기"),
+    h("section", { class: "sect" }, h("h3", {}, "가져오기"), h("div", { class: "row" }, h("label", { for: "imp-round" }, "대상 회차"), roundIn), csvIn, h("button", { type: "button", class: "btn", onclick: importText }, "미리 확인 후 가져오기")),
+    h("section", { class: "sect" }, h("h3", {}, "백업·복원"), h("div", { class: "row" },
+      h("button", { type: "button", class: "btn sm", onclick: () => download(`lotto-workroom-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: "lotto-workroom", version: 1, exportedAt: new Date().toISOString(), batches: state.batches, presets: state.presets }, null, 2), "application/json") }, "전체 백업(JSON) 받기"),
       h("label", {}, "복원 ", restoreIn))),
   );
   draw();

@@ -34,12 +34,16 @@ function layout(m: Meta): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(m.title)} · 로또 워크룸</title>
 <meta name="description" content="${esc(m.description)}">
-${m.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231e4fd8%27/%3E%3C/svg%3E">
+${m.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%23c0245e%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/content.css">
 </head>
 <body>
 <a class="skip" href="#main">본문으로 건너뛰기</a>
 <header>
+<div class="hd">
   <a class="brand" href="/">로또 워크룸</a>
   <nav aria-label="주 메뉴">
     <a href="/">조합 도구</a>
@@ -47,6 +51,7 @@ ${m.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="icon" h
     <a href="/probability/">당첨 확률</a>
     <a href="/about/">소개</a>
   </nav>
+</div>
 </header>
 <main id="main">
 ${m.body}
@@ -216,6 +221,7 @@ function privacyPage(): Page {
 <li>조합, 필터 설정, 프리셋은 <strong>이용자의 브라우저(IndexedDB)에만</strong> 저장됩니다. 서버로 전송하지 않으며, 브라우저 데이터를 지우면 사라집니다. 보관함의 백업(JSON) 기능으로 직접 내려받아 두세요.</li>
 <li>공유 링크의 번호는 주소의 # 뒤 부분에 담깁니다. 이 부분은 서버로 전송되지 않지만, 링크를 가진 사람은 번호를 볼 수 있습니다.</li>
 <li>이름, 이메일, 전화번호 등 개인정보를 수집하지 않습니다.</li>
+<li>화면의 글꼴은 Google Fonts에서 불러옵니다. 이때 이용자의 IP 주소와 브라우저 정보가 Google 서버에 전달될 수 있습니다.</li>
 </ul>
 <h2>광고와 쿠키</h2>
 <p>현재 이 사이트는 광고를 게재하지 않습니다. 앞으로 구글 애드센스 등 광고를 도입하면 Google과 제3자 광고 공급업체가 쿠키 등을 사용해 광고를 게재할 수 있으며, 이용자는 Google 광고 설정에서 맞춤 광고를 끌 수 있습니다. 광고를 도입하기 전에 이 문서를 먼저 갱신하고, 필요한 동의 절차를 안내합니다.</p>
